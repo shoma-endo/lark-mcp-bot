@@ -1,0 +1,36 @@
+{
+  "name": "lark-mcp-bot",
+  "version": "1.0.0",
+  "description": "Lark MCP AI Agent Bot - GLM-4.7 powered bot for Lark automation",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc && tsc -p api/tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "lint": "eslint src",
+    "test": "vitest"
+  },
+  "keywords": [
+    "lark",
+    "feishu",
+    "mcp",
+    "bot",
+    "ai",
+    "glm"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@larksuiteoapi/lark-mcp": "^0.5.1",
+    "@larksuiteoapi/node-sdk": "^1.55.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "tsx": "^4.19.2",
+    "vitest": "^2.1.8",
+    "eslint": "^9.17.0"
+  }
+}
