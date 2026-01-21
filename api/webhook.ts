@@ -1,9 +1,10 @@
 /**
  * Vercel Serverless Function for Lark Webhook
- * Uses background execution to avoid timeout
+ * Uses OpenAI SDK for GLM-4.7
  */
 
 import { Client } from '@larksuiteoapi/node-sdk';
+import OpenAI from 'openai';
 
 // Hardcoded config
 const LARK_APP_ID = 'cli_a8dd15cc74f8d02d';
@@ -20,33 +21,34 @@ const larkClient = new Client({
   domain: LARK_DOMAIN,
 });
 
-// Function to get GLM response
+// OpenAI client (for GLM-4.7)
+const openai = new OpenAI({
+  apiKey: GLM_API_KEY,
+  baseURL: GLM_API_BASE_URL,
+});
+
+// Function to get GLM response using OpenAI SDK
 async function getGLMResponse(messageText: string): Promise<string> {
-  const response = await fetch(`${GLM_API_BASE_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${GLM_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: GLM_MODEL,
-      messages: [
-        {
-          role: 'system',
-          content: 'あなたはLarkのAIアシスタントボットです。日本語で丁寧に答えてください。ユーザーがメンションで話しかけたら、メンションを外して通常のテキストで答えてください。',
-        },
-        {
-          role: 'user',
-          content: messageText.replace(/@_user_\d+\s*/g, ''), // Remove mention
-        },
-      ],
-      temperature: 0.7,
-      max_tokens: 1000,
-    }),
+  // Clean message text - remove mentions
+  const cleanText = messageText.replace(/@_user_\d+\s*/g, '');
+
+  const completion = await openai.chat.completions.create({
+    model: GLM_MODEL,
+    messages: [
+      {
+        role: 'system',
+        content: 'あなたはLarkのAIアシスタントボットです。日本語で丁寧に答えてください。',
+      },
+      {
+        role: 'user',
+        content: cleanText,
+      },
+    ],
+    temperature: 0.7,
+    max_tokens: 1000,
   });
 
-  const data = await response.json() as any;
-  return data.choices?.[0]?.message?.content || 'すみません、応答を生成できませんでした。';
+  return completion.choices[0].message.content || 'すみません、応答を生成できませんでした。';
 }
 
 // Function to send message to Lark
