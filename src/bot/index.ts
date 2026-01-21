@@ -1,26 +1,34 @@
 import * as lark from '@larksuiteoapi/node-sdk';
+import OpenAI from 'openai';
 import { config } from '../config.js';
-import { LarkClient } from '../lark/client.js';
-import { GLMClient, ChatMessage } from '../glm/client.js';
-import { LarkMCPServer } from '../mcp/server.js';
 
 /**
  * Lark MCP AI Agent Bot
  * Main bot logic integrating Lark, MCP, and GLM-4.7
  */
 export class LarkMCPBot {
-  public larkClient: LarkClient;
-  public glmClient: GLMClient;
-  private mcpServer: LarkMCPServer;
+  public larkClient: lark.Client;
+  public openai: OpenAI;
+  private mcpServer: any;
   private eventDispatcher: lark.EventDispatcher;
 
   // Conversation history per chat
-  private conversations: Map<string, ChatMessage[]> = new Map();
+  private conversations: Map<string, any[]> = new Map();
 
   constructor() {
-    this.larkClient = new LarkClient();
-    this.glmClient = new GLMClient();
-    this.mcpServer = new LarkMCPServer(this.larkClient);
+    this.larkClient = new lark.Client({
+      appId: config.larkAppId,
+      appSecret: config.larkAppSecret,
+      domain: config.larkDomain,
+    });
+
+    // Initialize OpenAI client with GLM-4.7
+    this.openai = new OpenAI({
+      apiKey: config.glmApiKey,
+      baseURL: config.glmApiBaseUrl,
+    });
+
+    // Note: MCP server would be initialized here if needed
     this.eventDispatcher = this.createEventDispatcher();
   }
 
@@ -75,11 +83,27 @@ export class LarkMCPBot {
       // Add user message to history
       history.push({ role: 'user', content: messageText });
 
-      // Generate AI response
-      const responseText = await this.glmClient.generateBotResponse(messageText, {
-        chatHistory: history,
-        userInfo: { name: sender.sender_id.user_id, userId: sender.sender_id.user_id },
+      // Remove mention from message text
+      const cleanText = messageText.replace(/@_user_\d+\s*/g, '');
+
+      // Build messages for GLM
+      const messages: any[] = [
+        {
+          role: 'system',
+          content: 'あなたはLarkのAIアシスタントボットです。日本語で丁寧に答えてください。',
+        },
+        ...history.slice(-10), // Keep last 10 messages for context
+      ];
+
+      // Generate AI response using OpenAI SDK
+      const completion = await this.openai.chat.completions.create({
+        model: config.glmModel,
+        messages,
+        temperature: 0.7,
+        max_tokens: 1000,
       });
+
+      const responseText = completion.choices[0].message.content || 'すみません、応答を生成できませんでした。';
 
       // Add assistant response to history
       history.push({ role: 'assistant', content: responseText });
@@ -113,45 +137,5 @@ export class LarkMCPBot {
    */
   getEventDispatcher(): lark.EventDispatcher {
     return this.eventDispatcher;
-  }
-
-  /**
-   * Get the MCP server
-   */
-  getMCPServer(): LarkMCPServer {
-    return this.mcpServer;
-  }
-
-  /**
-   * Start the bot with WebSocket long connection mode
-   */
-  async startWithWebSocket(): Promise<void> {
-    const wsClient = new lark.WSClient({
-      appId: config.larkAppId,
-      appSecret: config.larkAppSecret,
-      domain: config.larkDomain,
-      loggerLevel: lark.LoggerLevel.info,
-    });
-
-    await wsClient.start({
-      eventDispatcher: this.eventDispatcher,
-    });
-
-    console.log('Lark MCP Bot started with WebSocket connection');
-  }
-
-  /**
-   * Process a command with MCP tools
-   * This can be used for programmatic tool execution
-   */
-  async executeMCPTool(toolName: string, args: any): Promise<any> {
-    return await this.mcpServer.executeTool(toolName, args);
-  }
-
-  /**
-   * Get available MCP tools
-   */
-  getAvailableTools(): any[] {
-    return this.mcpServer.getTools();
   }
 }

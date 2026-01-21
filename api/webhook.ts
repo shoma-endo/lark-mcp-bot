@@ -6,13 +6,18 @@
 import { Client } from '@larksuiteoapi/node-sdk';
 import OpenAI from 'openai';
 
-// Hardcoded config
-const LARK_APP_ID = 'cli_a8dd15cc74f8d02d';
-const LARK_APP_SECRET = 'Vmntc3dthwWdeN0HPY4dxdTQiBIQw6he';
+// Read from environment variables
+const LARK_APP_ID = process.env.LARK_APP_ID || '';
+const LARK_APP_SECRET = process.env.LARK_APP_SECRET || '';
 const LARK_DOMAIN = 'https://open.feishu.cn';
-const GLM_API_KEY = 'dc07276f30214ac7849d5fe2c75b7652.rrmQUhYwpyQh5LwR';
+const GLM_API_KEY = process.env.GLM_API_KEY || '';
 const GLM_API_BASE_URL = 'https://api.z.ai/api/paas/v4';
 const GLM_MODEL = 'glm-4.7';
+
+// Validate required env vars
+if (!LARK_APP_ID || !LARK_APP_SECRET || !GLM_API_KEY) {
+  throw new Error('Missing required environment variables: LARK_APP_ID, LARK_APP_SECRET, GLM_API_KEY');
+}
 
 // Lark client
 const larkClient = new Client({
