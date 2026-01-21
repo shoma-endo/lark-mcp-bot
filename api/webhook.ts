@@ -74,7 +74,7 @@ async function processMessageAsync(messageData: any) {
       }),
     });
 
-    const glmData = await glmResponse.json();
+    const glmData = await glmResponse.json() as any;
     const responseText = glmData.choices?.[0]?.message?.content || 'すみません、応答を生成できませんでした。';
 
     console.log(`GLM response: ${responseText.substring(0, 50)}...`);
