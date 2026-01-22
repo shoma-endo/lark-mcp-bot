@@ -3,6 +3,20 @@ import OpenAI from 'openai';
 import { LarkMcpTool } from '@larksuiteoapi/lark-mcp/dist/mcp-tool/mcp-tool.js';
 import { larkOapiHandler } from '@larksuiteoapi/lark-mcp/dist/mcp-tool/utils/index.js';
 import { config } from '../config.js';
+import type {
+  ConversationMessage,
+  FunctionDefinition,
+  MCPTool,
+  MCPToolResult,
+  LarkMessageEvent,
+  LarkTextContent,
+  LogContext,
+} from '../types.js';
+import {
+  LLMError,
+  ToolExecutionError,
+  LarkAPIError,
+} from '../types.js';
 
 /**
  * Helper function to send text message via Lark API
@@ -30,11 +44,14 @@ export class LarkMCPBot {
   public mcpTool: LarkMcpTool;
   private eventDispatcher: lark.EventDispatcher;
 
-  // Conversation history per chat
-  private conversations: Map<string, any[]> = new Map();
+  // Conversation history per chat (with TTL-like cleanup)
+  private conversations: Map<string, ConversationMessage[]> = new Map();
+  private conversationTimestamps: Map<string, number> = new Map();
+  private readonly CONVERSATION_TTL_MS = 60 * 60 * 1000; // 1 hour
+  private readonly MAX_CONVERSATIONS = 1000;
 
   // MCP tools as GLM function definitions
-  private functionDefinitions: any[] = [];
+  private functionDefinitions: FunctionDefinition[] = [];
 
   constructor() {
     this.larkClient = new lark.Client({
@@ -69,14 +86,14 @@ export class LarkMCPBot {
    * Convert MCP tools to GLM function calling format
    * Cleans up JSON Schema properties not needed by GLM-4.7
    */
-  private convertMcpToolsToFunctions(): any[] {
-    const mcpTools = this.mcpTool.getTools();
+  private convertMcpToolsToFunctions(): FunctionDefinition[] {
+    const mcpTools = this.mcpTool.getTools() as MCPTool[];
 
-    return mcpTools.map((tool: any) => {
+    return mcpTools.map((tool: MCPTool): FunctionDefinition => {
       // Clean up schema - remove MCP-specific properties
       const { schema } = tool;
       const cleanSchema = {
-        type: schema.type || 'object',
+        type: (schema.type as string) || 'object',
         properties: schema.properties || {},
         required: schema.required || [],
       };
@@ -90,6 +107,59 @@ export class LarkMCPBot {
         },
       };
     });
+  }
+
+  /**
+   * Clean up expired conversations to prevent memory leaks
+   */
+  private cleanupExpiredConversations(): void {
+    const now = Date.now();
+    const expiredChats: string[] = [];
+
+    for (const [chatId, timestamp] of this.conversationTimestamps) {
+      if (now - timestamp > this.CONVERSATION_TTL_MS) {
+        expiredChats.push(chatId);
+      }
+    }
+
+    for (const chatId of expiredChats) {
+      this.conversations.delete(chatId);
+      this.conversationTimestamps.delete(chatId);
+    }
+
+    // Also enforce max conversations limit (LRU-like behavior)
+    if (this.conversations.size > this.MAX_CONVERSATIONS) {
+      const sortedByTime = [...this.conversationTimestamps.entries()]
+        .sort((a, b) => a[1] - b[1]);
+
+      const toRemove = sortedByTime.slice(0, this.conversations.size - this.MAX_CONVERSATIONS);
+      for (const [chatId] of toRemove) {
+        this.conversations.delete(chatId);
+        this.conversationTimestamps.delete(chatId);
+      }
+    }
+  }
+
+  /**
+   * Structured logging helper
+   */
+  private log(level: 'info' | 'warn' | 'error' | 'debug', message: string, context?: LogContext, error?: Error): void {
+    const timestamp = new Date().toISOString();
+    const logData = {
+      timestamp,
+      level,
+      message,
+      ...context,
+      ...(error && { error: { name: error.name, message: error.message, stack: error.stack } }),
+    };
+
+    if (level === 'error') {
+      console.error(JSON.stringify(logData));
+    } else if (level === 'warn') {
+      console.warn(JSON.stringify(logData));
+    } else {
+      console.log(JSON.stringify(logData));
+    }
   }
 
   /**
@@ -112,46 +182,69 @@ export class LarkMCPBot {
   /**
    * Execute an MCP tool call
    */
-  private async executeToolCall(toolName: string, parameters: any): Promise<string> {
+  private async executeToolCall(toolName: string, parameters: Record<string, unknown>): Promise<string> {
+    const context: LogContext = { toolName };
+
     try {
-      console.log(`[MCP] Executing tool: ${toolName}`, JSON.stringify(parameters).substring(0, 200));
+      this.log('info', `Executing MCP tool`, {
+        ...context,
+        parameters: JSON.stringify(parameters).substring(0, 200),
+      });
 
       // Find the tool definition
-      const mcpTools = this.mcpTool.getTools();
-      const tool = mcpTools.find((t: any) => t.name === toolName);
+      const mcpTools = this.mcpTool.getTools() as MCPTool[];
+      const tool = mcpTools.find((t: MCPTool) => t.name === toolName);
 
       if (!tool) {
-        return `Error: Tool ${toolName} not found`;
+        throw new ToolExecutionError(`Tool ${toolName} not found`, toolName);
       }
 
       // Execute using the larkOapiHandler from MCP package
-      const result = await larkOapiHandler(this.larkClient, parameters, { tool });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await larkOapiHandler(this.larkClient, parameters, { tool: tool as any }) as MCPToolResult;
 
       if (result.isError) {
-        return `Error: ${JSON.stringify(result.content)}`;
+        throw new ToolExecutionError(
+          `Tool execution failed: ${JSON.stringify(result.content)}`,
+          toolName
+        );
       }
 
       // Return the result content
       const content = result.content?.[0]?.text || JSON.stringify(result.content);
+      this.log('info', `Tool executed successfully`, { ...context, resultLength: content.length });
       return content;
-    } catch (error: any) {
-      console.error(`[MCP] Tool execution error:`, error);
-      return `Error executing tool: ${error?.message || error}`;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+
+      if (error instanceof ToolExecutionError) {
+        this.log('error', `Tool execution failed`, context, err);
+        return `Error: ${err.message}`;
+      }
+
+      this.log('error', `Unexpected error during tool execution`, context, err);
+      return `Error executing tool: ${err.message}`;
     }
   }
 
   /**
    * Handle incoming message event with Function Calling
    */
-  private async handleMessageReceive(data: any): Promise<void> {
+  private async handleMessageReceive(data: LarkMessageEvent): Promise<void> {
     const { message, sender } = data;
+    const chatId = message.chat_id || '';
+    const userId = sender?.sender_id?.user_id || 'unknown';
+    const context: LogContext = { chatId, userId, messageId: message.message_id };
 
     try {
+      // Clean up expired conversations periodically
+      this.cleanupExpiredConversations();
+
       // Parse message content
       let messageText = '';
       if (message.content) {
         try {
-          const content = JSON.parse(message.content);
+          const content: LarkTextContent = JSON.parse(message.content);
           messageText = content.text || '';
         } catch {
           messageText = message.content || '';
@@ -162,13 +255,13 @@ export class LarkMCPBot {
         return;
       }
 
-      console.log(`[${sender.sender_id.user_id}]: ${messageText}`);
+      this.log('info', `Received message`, { ...context, messageLength: messageText.length });
 
       // Get or create conversation history
-      const chatId = message.chat_id;
       if (!this.conversations.has(chatId)) {
         this.conversations.set(chatId, []);
       }
+      this.conversationTimestamps.set(chatId, Date.now());
       const history = this.conversations.get(chatId)!;
 
       // Remove mention from message text
@@ -187,7 +280,7 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
 日本語で丁寧に答えてください。ツールを実行する必要がある場合は、適切なツールを選択してください。`;
 
       // Build messages for GLM
-      const messages: any[] = [
+      const messages: ConversationMessage[] = [
         {
           role: 'system',
           content: systemPrompt,
@@ -198,8 +291,8 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
       // Generate AI response using OpenAI SDK with Function Calling
       const completion = await this.openai.chat.completions.create({
         model: config.glmModel,
-        messages,
-        tools: this.functionDefinitions,
+        messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
+        tools: this.functionDefinitions as OpenAI.Chat.ChatCompletionTool[],
         temperature: 0.7,
         max_tokens: 2000,
       });
@@ -210,14 +303,16 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
       const toolCalls = responseMessage.tool_calls;
       if (toolCalls && toolCalls.length > 0) {
         // Execute tool calls
-        const toolResults: any[] = [];
+        const toolResults: ConversationMessage[] = [];
 
         for (const toolCall of toolCalls) {
-          // Type assertion for function call
-          const fnCall = toolCall as any;
-          const functionName = fnCall.function?.name || fnCall.name;
+          // Handle both standard and custom tool call formats
+          const fnInfo = 'function' in toolCall ? toolCall.function : undefined;
+          const functionName = fnInfo?.name || '';
           // GLM-4.7 returns arguments as object, not JSON string
-          const functionArgs = fnCall.function?.arguments || {};
+          const rawArgs = fnInfo?.arguments;
+          const functionArgs: Record<string, unknown> =
+            typeof rawArgs === 'string' ? JSON.parse(rawArgs) : (rawArgs as unknown as Record<string, unknown>) ?? {};
 
           // Execute the tool
           const result = await this.executeToolCall(functionName, functionArgs);
@@ -232,7 +327,17 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
           history.push({
             role: 'assistant',
             content: responseMessage.content || '',
-            tool_calls: toolCalls,
+            tool_calls: toolCalls.map(tc => {
+              const fn = 'function' in tc ? tc.function : undefined;
+              return {
+                id: tc.id,
+                type: 'function' as const,
+                function: {
+                  name: fn?.name || '',
+                  arguments: fn?.arguments || '',
+                },
+              };
+            }),
           });
 
           // Add tool result to history
@@ -240,15 +345,14 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
         }
 
         // Get final response after tool execution
+        const followUpMessages: ConversationMessage[] = [
+          { role: 'system', content: systemPrompt },
+          ...history.slice(-20),
+        ];
+
         const followUpCompletion = await this.openai.chat.completions.create({
           model: config.glmModel,
-          messages: [
-            {
-              role: 'system',
-              content: systemPrompt,
-            },
-            ...history.slice(-20),
-          ],
+          messages: followUpMessages as OpenAI.Chat.ChatCompletionMessageParam[],
           temperature: 0.7,
           max_tokens: 2000,
         });
@@ -264,9 +368,9 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
         }
 
         // Send response
-        await sendTextMessage(this.larkClient, chatId, finalResponse);
+        await this.sendMessageWithRetry(chatId, finalResponse, context);
 
-        console.log(`[Bot]: ${finalResponse.substring(0, 100)}...`);
+        this.log('info', `Response sent (with tool calls)`, { ...context, responseLength: finalResponse.length });
       } else {
         // No tool calls, just respond
         const responseText = responseMessage.content || 'すみません、応答を生成できませんでした。';
@@ -280,24 +384,62 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
         }
 
         // Send response
-        await sendTextMessage(this.larkClient, chatId, responseText);
+        await this.sendMessageWithRetry(chatId, responseText, context);
 
-        console.log(`[Bot]: ${responseText.substring(0, 100)}...`);
+        this.log('info', `Response sent`, { ...context, responseLength: responseText.length });
       }
     } catch (error) {
-      console.error('Error handling message:', error);
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.log('error', `Error handling message`, context, err);
 
-      // Send error message
+      // Determine error type and message
+      let userErrorMessage = '申し訳ありません。エラーが発生しました。もう一度お試しください。';
+      if (error instanceof LLMError) {
+        userErrorMessage = '申し訳ありません。AI応答の生成中にエラーが発生しました。しばらくしてからお試しください。';
+      } else if (error instanceof ToolExecutionError) {
+        userErrorMessage = `申し訳ありません。ツール「${error.toolName}」の実行中にエラーが発生しました。`;
+      } else if (error instanceof LarkAPIError) {
+        userErrorMessage = '申し訳ありません。Lark APIとの通信中にエラーが発生しました。';
+      }
+
+      // Send error message with retry
       try {
-        await sendTextMessage(
-          this.larkClient,
-          message.chat_id,
-          '申し訳ありません。エラーが発生しました。もう一度お試しください。'
-        );
-      } catch {
-        // Ignore send error
+        await this.sendMessageWithRetry(chatId, userErrorMessage, context);
+      } catch (sendError) {
+        const sendErr = sendError instanceof Error ? sendError : new Error(String(sendError));
+        this.log('error', `Failed to send error message to user`, context, sendErr);
       }
     }
+  }
+
+  /**
+   * Send message with retry logic for transient failures
+   */
+  private async sendMessageWithRetry(
+    chatId: string,
+    text: string,
+    context: LogContext,
+    maxRetries: number = 3
+  ): Promise<void> {
+    let lastError: Error | undefined;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await sendTextMessage(this.larkClient, chatId, text);
+        return;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        this.log('warn', `Send message attempt ${attempt} failed`, context, lastError);
+
+        if (attempt < maxRetries) {
+          // Exponential backoff: 1s, 2s, 4s
+          const delay = Math.pow(2, attempt - 1) * 1000;
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    throw new LarkAPIError(`Failed to send message after ${maxRetries} attempts`, lastError);
   }
 
   /**
