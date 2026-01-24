@@ -1,8 +1,21 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+// Mock dotenv to prevent loading .env file
+vi.mock('dotenv', () => ({
+  default: {
+    config: vi.fn(),
+  },
+}));
+
 describe('Config Module', () => {
   beforeEach(() => {
     vi.resetModules();
+    // Clear all environment variables before each test
+    delete process.env.LARK_APP_ID;
+    delete process.env.LARK_APP_SECRET;
+    delete process.env.GLM_API_KEY;
+    delete process.env.PORT;
+    delete process.env.WEBHOOK_PATH;
   });
 
   afterEach(() => {
