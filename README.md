@@ -5,10 +5,10 @@ Lark（Feishu）のテナント内をMCP（Model Context Protocol）経由で自
 ## 🎯 特徴
 
 - **Lark API統合**: `@larksuiteoapi/node-sdk`を使用した完全なLark APIアクセス
-- **MCPサーバー**: Larkの機能をMCPツールとして公開
-- **GLM-4.7連携**: Zhipu AIのGLM-4.7モデルによる高精度な応答生成
-- **WebSocket長接続**: ファイアウォール設定不要のローカル開発対応
-- **会話履歴管理**: チャットごとのコンテキスト保持
+- **MCPツール統合**: `@larksuiteoapi/lark-mcp`による100+のLark APIツールをGLM-4.7のFunction Callingに変換
+- **GLM-4.7連携**: Zhipu AIのGLM-4.7モデルによる高精度な応答生成と自動的なツール選択
+- **会話履歴管理**: チャットごとのコンテキスト保持（最大30メッセージ）
+- **エラーハンドリング**: 自動リトライ・構造化ログ・適切なエラーメッセージ
 
 ## 📋 できること
 
@@ -35,8 +35,8 @@ npm install
 
 ```env
 # Lark App Credentials
-LARK_APP_ID=cli_a8dd15cc74f8d02d
-LARK_APP_SECRET=Vmntc3dthwWdeN0HPY4dxdTQiBIQw6he
+LARK_APP_ID=your_app_id_here
+LARK_APP_SECRET=your_app_secret_here
 
 # Lark API Domain
 LARK_DOMAIN=https://open.feishu.cn
@@ -88,18 +88,18 @@ npm start
 lark-mcp-bot/
 ├── src/
 │   ├── bot/
-│   │   └── index.ts       # メインボットロジック
-│   ├── lark/
-│   │   └── client.ts      # Lark APIクライアント
-│   ├── glm/
-│   │   └── client.ts      # GLM-4.7 APIクライアント
-│   ├── mcp/
-│   │   └── server.ts      # MCPサーバー
+│   │   └── index.ts       # メインボットロジック（MCP統合・Function Calling）
 │   ├── config.ts          # 設定管理
-│   └── index.ts           # エントリーポイント
+│   ├── types.ts           # 型定義
+│   └── index.ts           # HTTPサーバー・Webhookエンドポイント
+├── tests/
+│   ├── bot.test.ts        # ユニットテスト
+│   ├── integration.test.ts # 統合テスト
+│   └── setup.ts         # テスト共通設定
 ├── package.json
 ├── tsconfig.json
-└── .env
+├── vitest.config.ts
+└── .env               # 環境変数（.gitignore済み）
 ```
 
 ## 🔌 MCPツール
@@ -120,44 +120,64 @@ lark-mcp-bot/
 
 ## 💬 使用例
 
-### チャットでボットに話しかける
+### Larkチャットでボットに話しかける
+
+Larkでボットにメンションして会話します。ボットはGLM-4.7であなたのリクエストを解析し、適切なLark APIを自動的に実行します。
 
 ```
-ユーザー: こんにちは！
+ユーザー: @bot こんにちは！
 ボット: こんにちは！私はLarkのAIアシスタントボットです。メッセージ検索、ドキュメント読み取り、Base操作などができます。
 
-ユーザー: 最近のメッセージを要約して
+ユーザー: @bot 最近のメッセージを要約して
 ボット: [最近のメッセージの要約を表示]
 
-ユーザー: 新しいグループを作成して
+ユーザー: @bot 新しいグループを作成して
 ボット: グループ名と参加メンバーを教えてください。
+
+ユーザー: @bot チャット一覧見せて
+ボット: [チャット一覧を表示]
+
+ユーザー: @bot Bitableにレコード追加して
+ボット: どのBaseのどのテーブルに追加しますか？
 ```
 
-### プログラムからMCPツールを使用
+## 🧪 テスト
 
-```typescript
-import { LarkMCPBot } from './src/bot/index.js';
+### ユニットテスト
 
-const bot = new LarkMCPBot();
+個々のコンポーネントのテスト：
 
-// メッセージを送信
-await bot.executeMCPTool('lark_send_message', {
-  chat_id: 'oc_xxxxxxxxx',
-  text: 'こんにちは！'
-});
-
-// メッセージ一覧を取得
-const messages = await bot.executeMCPTool('lark_list_messages', {
-  chat_id: 'oc_xxxxxxxxx',
-  limit: 20
-});
+```bash
+npm test
 ```
+
+### 統合テスト
+
+エンドツーエンドのメッセージフローのテスト：
+
+```bash
+npm test -- tests/integration.test.ts
+```
+
+### カバレッジ
+
+カバレッジレポートを表示：
+
+```bash
+npm run test:coverage
+```
+
+目標: 80%以上のカバレッジ
 
 ## 🔧 トラブルシューティング
 
-### WebSocket接続が失敗する場合
+### GLM API残高不足
 
-ファイアウォールやネットワーク設定によりWebSocket接続ができない場合、HTTP Webhookモードにフォールバックします。その場合は、Lark管理画面でイベント購読のURLを設定してください。
+ボットが応答しない場合、GLM API残高が不足している可能性があります。以下の手順で確認してください：
+
+1. [Zhipu AI Open Platform](https://open.bigmodel.cn/) にアクセス
+2. API残高を確認
+3. 必要に応じてチャージする
 
 ### GLM APIキーの取得
 
@@ -165,6 +185,16 @@ const messages = await bot.executeMCPTool('lark_list_messages', {
 2. アカウントを作成・ログイン
 3. API Keyを発行
 4. `.env`ファイルに設定
+
+### テストが失敗する場合
+
+```bash
+# モックをクリアして再実行
+npm test -- --run
+
+# デバッグモードで実行
+npm test -- --reporter=verbose
+```
 
 ## 📄 ライセンス
 
