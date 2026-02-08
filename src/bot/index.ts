@@ -3,6 +3,8 @@ import OpenAI from 'openai';
 import { LarkMcpTool } from '@larksuiteoapi/lark-mcp/dist/mcp-tool/mcp-tool.js';
 import { larkOapiHandler } from '@larksuiteoapi/lark-mcp/dist/mcp-tool/utils/index.js';
 import { config } from '../config.js';
+import { logger } from '../utils/logger.js';
+import { createStorage, type ConversationStorage } from '../storage/index.js';
 import type {
   ConversationMessage,
   FunctionDefinition,
@@ -16,6 +18,9 @@ import {
   LLMError,
   ToolExecutionError,
   LarkAPIError,
+  RateLimitError,
+  ValidationError,
+  LarkBotError,
 } from '../types.js';
 
 /**
@@ -43,17 +48,48 @@ export class LarkMCPBot {
   public openai: OpenAI;
   public mcpTool: LarkMcpTool;
   private eventDispatcher: lark.EventDispatcher;
+  private storage: ConversationStorage;
 
-  // Conversation history per chat (with TTL-like cleanup)
-  private conversations: Map<string, ConversationMessage[]> = new Map();
-  private conversationTimestamps: Map<string, number> = new Map();
+  // Conversation TTL settings
   private readonly CONVERSATION_TTL_MS = 60 * 60 * 1000; // 1 hour
-  private readonly MAX_CONVERSATIONS = 1000;
 
   // MCP tools as GLM function definitions
   private functionDefinitions: FunctionDefinition[] = [];
 
-  constructor() {
+  /**
+   * Extract detailed OpenAI-compatible API error fields for diagnostics.
+   */
+  private getApiErrorDetails(error: unknown): Record<string, unknown> {
+    const apiError = error as {
+      status?: number;
+      code?: string | number;
+      type?: string;
+      param?: string;
+      request_id?: string;
+      headers?: Record<string, string>;
+      error?: {
+        code?: string | number;
+        message?: string;
+        type?: string;
+        param?: string;
+      };
+    };
+
+    return {
+      status: apiError?.status,
+      code: apiError?.code,
+      type: apiError?.type,
+      param: apiError?.param,
+      requestId: apiError?.request_id,
+      responseErrorCode: apiError?.error?.code,
+      responseErrorType: apiError?.error?.type,
+      responseErrorParam: apiError?.error?.param,
+      responseErrorMessage: apiError?.error?.message,
+      xRequestId: apiError?.headers?.['x-request-id'],
+    };
+  }
+
+  constructor(storage?: ConversationStorage) {
     this.larkClient = new lark.Client({
       appId: config.larkAppId,
       appSecret: config.larkAppSecret,
@@ -76,6 +112,9 @@ export class LarkMCPBot {
       },
     }, undefined);
 
+    // Initialize storage (Redis in production, Memory in development)
+    this.storage = storage || createStorage();
+
     // Convert MCP tools to GLM function definitions
     this.functionDefinitions = this.convertMcpToolsToFunctions();
 
@@ -83,11 +122,42 @@ export class LarkMCPBot {
   }
 
   /**
+   * Filter MCP tools based on configuration
+   */
+  private filterMcpTools(tools: MCPTool[]): MCPTool[] {
+    const { enabledToolPrefixes, disabledTools } = config;
+    
+    let filtered = tools;
+
+    // Filter by enabled prefixes (if specified)
+    if (enabledToolPrefixes.length > 0) {
+      filtered = filtered.filter((tool) =>
+        enabledToolPrefixes.some((prefix) => tool.name.startsWith(prefix))
+      );
+    }
+
+    // Remove explicitly disabled tools
+    if (disabledTools.length > 0) {
+      filtered = filtered.filter((tool) => !disabledTools.includes(tool.name));
+    }
+
+    logger.info(`MCP tools filtered`, undefined, {
+      totalTools: tools.length,
+      filteredTools: filtered.length,
+      enabledPrefixes: enabledToolPrefixes,
+      disabledTools: disabledTools,
+    });
+
+    return filtered;
+  }
+
+  /**
    * Convert MCP tools to GLM function calling format
    * Cleans up JSON Schema properties not needed by GLM-4.7
    */
   private convertMcpToolsToFunctions(): FunctionDefinition[] {
-    const mcpTools = this.mcpTool.getTools() as MCPTool[];
+    const allMcpTools = this.mcpTool.getTools() as MCPTool[];
+    const mcpTools = this.filterMcpTools(allMcpTools);
 
     return mcpTools.map((tool: MCPTool): FunctionDefinition => {
       // Clean up schema - remove MCP-specific properties
@@ -110,55 +180,15 @@ export class LarkMCPBot {
   }
 
   /**
-   * Clean up expired conversations to prevent memory leaks
+   * Clean up expired conversations to prevent memory/storage bloat
    */
-  private cleanupExpiredConversations(): void {
-    const now = Date.now();
-    const expiredChats: string[] = [];
+  private async cleanupExpiredConversations(): Promise<void> {
+    const cleaned = await this.storage.cleanup(this.CONVERSATION_TTL_MS);
 
-    for (const [chatId, timestamp] of this.conversationTimestamps) {
-      if (now - timestamp > this.CONVERSATION_TTL_MS) {
-        expiredChats.push(chatId);
-      }
-    }
-
-    for (const chatId of expiredChats) {
-      this.conversations.delete(chatId);
-      this.conversationTimestamps.delete(chatId);
-    }
-
-    // Also enforce max conversations limit (LRU-like behavior)
-    if (this.conversations.size > this.MAX_CONVERSATIONS) {
-      const sortedByTime = [...this.conversationTimestamps.entries()]
-        .sort((a, b) => a[1] - b[1]);
-
-      const toRemove = sortedByTime.slice(0, this.conversations.size - this.MAX_CONVERSATIONS);
-      for (const [chatId] of toRemove) {
-        this.conversations.delete(chatId);
-        this.conversationTimestamps.delete(chatId);
-      }
-    }
-  }
-
-  /**
-   * Structured logging helper
-   */
-  private log(level: 'info' | 'warn' | 'error' | 'debug', message: string, context?: LogContext, error?: Error): void {
-    const timestamp = new Date().toISOString();
-    const logData = {
-      timestamp,
-      level,
-      message,
-      ...context,
-      ...(error && { error: { name: error.name, message: error.message, stack: error.stack } }),
-    };
-
-    if (level === 'error') {
-      console.error(JSON.stringify(logData));
-    } else if (level === 'warn') {
-      console.warn(JSON.stringify(logData));
-    } else {
-      console.log(JSON.stringify(logData));
+    if (cleaned > 0) {
+      logger.debug(`Cleaned up expired conversations`, undefined, {
+        cleanedCount: cleaned,
+      });
     }
   }
 
@@ -180,16 +210,22 @@ export class LarkMCPBot {
   }
 
   /**
-   * Execute an MCP tool call
+   * Execute an MCP tool call with enhanced error handling and logging
    */
   private async executeToolCall(toolName: string, parameters: Record<string, unknown>): Promise<string> {
     const context: LogContext = { toolName };
+    const metricId = `tool_${toolName}_${Date.now()}`;
 
     try {
-      this.log('info', `Executing MCP tool`, {
-        ...context,
-        parameters: JSON.stringify(parameters).substring(0, 200),
+      logger.startMetric(metricId, `execute_tool_${toolName}`, { parameters });
+      logger.info(`Executing MCP tool`, context, {
+        parametersPreview: JSON.stringify(parameters).substring(0, 200),
       });
+
+      // Validate tool name
+      if (!toolName || typeof toolName !== 'string') {
+        throw new ValidationError('Invalid tool name', 'toolName');
+      }
 
       // Find the tool definition
       const mcpTools = this.mcpTool.getTools() as MCPTool[];
@@ -204,25 +240,37 @@ export class LarkMCPBot {
       const result = await larkOapiHandler(this.larkClient, parameters, { tool: tool as any }) as MCPToolResult;
 
       if (result.isError) {
+        const errorContent = result.content?.[0]?.text || JSON.stringify(result.content);
         throw new ToolExecutionError(
-          `Tool execution failed: ${JSON.stringify(result.content)}`,
+          `Tool execution failed: ${errorContent}`,
           toolName
         );
       }
 
       // Return the result content
       const content = result.content?.[0]?.text || JSON.stringify(result.content);
-      this.log('info', `Tool executed successfully`, { ...context, resultLength: content.length });
+      
+      logger.endMetric(metricId, context, { resultLength: content.length });
+      logger.info(`Tool executed successfully`, context, { resultLength: content.length });
+      
       return content;
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
 
+      logger.endMetric(metricId, context, { success: false, error: err.message });
+
       if (error instanceof ToolExecutionError) {
-        this.log('error', `Tool execution failed`, context, err);
+        logger.error(`Tool execution failed`, context, err);
         return `Error: ${err.message}`;
       }
 
-      this.log('error', `Unexpected error during tool execution`, context, err);
+      if (error instanceof ValidationError) {
+        logger.warn(`Tool validation failed`, context, err);
+        return `Error: ${err.message}`;
+      }
+
+      // Wrap unknown errors
+      logger.error(`Unexpected error during tool execution`, context, err);
       return `Error executing tool: ${err.message}`;
     }
   }
@@ -235,10 +283,13 @@ export class LarkMCPBot {
     const chatId = message.chat_id || '';
     const userId = sender?.sender_id?.user_id || 'unknown';
     const context: LogContext = { chatId, userId, messageId: message.message_id };
+    const metricId = `handle_message_${chatId}_${Date.now()}`;
 
     try {
+      logger.startMetric(metricId, 'handle_message_receive', { chatId, userId });
+      
       // Clean up expired conversations periodically
-      this.cleanupExpiredConversations();
+      await this.cleanupExpiredConversations();
 
       // Parse message content
       let messageText = '';
@@ -252,17 +303,15 @@ export class LarkMCPBot {
       }
 
       if (!messageText || messageText.trim() === '') {
+        logger.debug(`Skipping empty message`, context);
         return;
       }
 
-      this.log('info', `Received message`, { ...context, messageLength: messageText.length });
+      logger.info(`Received message`, context, { messageLength: messageText.length });
 
-      // Get or create conversation history
-      if (!this.conversations.has(chatId)) {
-        this.conversations.set(chatId, []);
-      }
-      this.conversationTimestamps.set(chatId, Date.now());
-      const history = this.conversations.get(chatId)!;
+      // Get or create conversation history from storage
+      const history = await this.storage.getHistory(chatId);
+      await this.storage.setTimestamp(chatId, Date.now());
 
       // Remove mention from message text
       const cleanText = messageText.replace(/@_user_\d+\s*/g, '');
@@ -289,13 +338,40 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
       ];
 
       // Generate AI response using OpenAI SDK with Function Calling
-      const completion = await this.openai.chat.completions.create({
+      const llmMetricId = `llm_completion_${chatId}_${Date.now()}`;
+      logger.startMetric(llmMetricId, 'llm_completion', { 
         model: config.glmModel,
-        messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
-        tools: this.functionDefinitions as OpenAI.Chat.ChatCompletionTool[],
-        temperature: 0.7,
-        max_tokens: 2000,
+        messageCount: messages.length,
       });
+      
+      let completion;
+      try {
+        completion = await this.openai.chat.completions.create({
+          model: config.glmModel,
+          messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
+          tools: this.functionDefinitions as OpenAI.Chat.ChatCompletionTool[],
+          temperature: 0.7,
+          max_tokens: 2000,
+        });
+        
+        logger.endMetric(llmMetricId, context, { 
+          success: true,
+          tokensUsed: completion.usage?.total_tokens,
+        });
+      } catch (error) {
+        logger.endMetric(llmMetricId, context, { success: false });
+        
+        const err = error instanceof Error ? error : new Error(String(error));
+        logger.error('GLM completion request failed', context, err, this.getApiErrorDetails(error));
+        
+        // Check for rate limit errors
+        if (err.message.includes('429') || err.message.toLowerCase().includes('rate limit')) {
+          throw new RateLimitError('GLM API rate limit exceeded', undefined, err);
+        }
+        
+        // Wrap as LLM error
+        throw new LLMError(`Failed to generate AI response: ${err.message}`, err);
+      }
 
       const responseMessage = completion.choices[0].message;
 
@@ -350,12 +426,37 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
           ...history.slice(-20),
         ];
 
-        const followUpCompletion = await this.openai.chat.completions.create({
+        const followUpMetricId = `llm_followup_${chatId}_${Date.now()}`;
+        logger.startMetric(followUpMetricId, 'llm_followup_completion', {
           model: config.glmModel,
-          messages: followUpMessages as OpenAI.Chat.ChatCompletionMessageParam[],
-          temperature: 0.7,
-          max_tokens: 2000,
+          messageCount: followUpMessages.length,
         });
+
+        let followUpCompletion;
+        try {
+          followUpCompletion = await this.openai.chat.completions.create({
+            model: config.glmModel,
+            messages: followUpMessages as OpenAI.Chat.ChatCompletionMessageParam[],
+            temperature: 0.7,
+            max_tokens: 2000,
+          });
+          
+          logger.endMetric(followUpMetricId, context, {
+            success: true,
+            tokensUsed: followUpCompletion.usage?.total_tokens,
+          });
+        } catch (error) {
+          logger.endMetric(followUpMetricId, context, { success: false });
+          
+          const err = error instanceof Error ? error : new Error(String(error));
+          logger.error('GLM follow-up completion request failed', context, err, this.getApiErrorDetails(error));
+          
+          if (err.message.includes('429') || err.message.toLowerCase().includes('rate limit')) {
+            throw new RateLimitError('GLM API rate limit exceeded', undefined, err);
+          }
+          
+          throw new LLMError(`Failed to generate follow-up response: ${err.message}`, err);
+        }
 
         const finalResponse = followUpCompletion.choices[0].message.content || 'すみません、応答を生成できませんでした。';
 
@@ -367,10 +468,18 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
           history.splice(0, history.length - 30);
         }
 
+        // Save conversation history to storage
+        await this.storage.setHistory(chatId, history);
+
         // Send response
         await this.sendMessageWithRetry(chatId, finalResponse, context);
 
-        this.log('info', `Response sent (with tool calls)`, { ...context, responseLength: finalResponse.length });
+        logger.endMetric(metricId, context, { 
+          withToolCalls: true,
+          toolCallCount: toolCalls.length,
+          responseLength: finalResponse.length,
+        });
+        logger.info(`Response sent (with tool calls)`, context, { responseLength: finalResponse.length });
       } else {
         // No tool calls, just respond
         const responseText = responseMessage.content || 'すみません、応答を生成できませんでした。';
@@ -383,23 +492,39 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
           history.splice(0, history.length - 20);
         }
 
+        // Save conversation history to storage
+        await this.storage.setHistory(chatId, history);
+
         // Send response
         await this.sendMessageWithRetry(chatId, responseText, context);
 
-        this.log('info', `Response sent`, { ...context, responseLength: responseText.length });
+        logger.endMetric(metricId, context, { 
+          withToolCalls: false,
+          responseLength: responseText.length,
+        });
+        logger.info(`Response sent`, context, { responseLength: responseText.length });
       }
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      this.log('error', `Error handling message`, context, err);
+      
+      logger.endMetric(metricId, context, { 
+        success: false,
+        error: err.message,
+      });
+      logger.error(`Error handling message`, context, err);
 
-      // Determine error type and message
-      let userErrorMessage = '申し訳ありません。エラーが発生しました。もう一度お試しください。';
-      if (error instanceof LLMError) {
-        userErrorMessage = '申し訳ありません。AI応答の生成中にエラーが発生しました。しばらくしてからお試しください。';
-      } else if (error instanceof ToolExecutionError) {
-        userErrorMessage = `申し訳ありません。ツール「${error.toolName}」の実行中にエラーが発生しました。`;
-      } else if (error instanceof LarkAPIError) {
-        userErrorMessage = '申し訳ありません。Lark APIとの通信中にエラーが発生しました。';
+      // Determine error type and message using custom error classes
+      let userErrorMessage: string;
+      
+      if (error instanceof LarkBotError) {
+        // Use the custom error's user-friendly message
+        userErrorMessage = error.toUserMessage();
+      } else if (error instanceof Error && error.message.includes('rate limit')) {
+        // Handle rate limit errors from external APIs
+        userErrorMessage = '申し訳ありません。現在リクエストが集中しています。しばらく待ってからお試しください。';
+      } else {
+        // Generic error message for unknown errors
+        userErrorMessage = '申し訳ありません。エラーが発生しました。もう一度お試しください。';
       }
 
       // Send error message with retry
@@ -407,13 +532,13 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
         await this.sendMessageWithRetry(chatId, userErrorMessage, context);
       } catch (sendError) {
         const sendErr = sendError instanceof Error ? sendError : new Error(String(sendError));
-        this.log('error', `Failed to send error message to user`, context, sendErr);
+        logger.error(`Failed to send error message to user`, context, sendErr);
       }
     }
   }
 
   /**
-   * Send message with retry logic for transient failures
+   * Send message with retry logic and exponential backoff for transient failures
    */
   private async sendMessageWithRetry(
     chatId: string,
@@ -421,19 +546,49 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
     context: LogContext,
     maxRetries: number = 3
   ): Promise<void> {
+    const metricId = `send_message_${chatId}_${Date.now()}`;
     let lastError: Error | undefined;
+
+    logger.startMetric(metricId, 'send_message', { chatId, textLength: text.length });
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         await sendTextMessage(this.larkClient, chatId, text);
+        
+        logger.endMetric(metricId, context, { 
+          attempts: attempt,
+          success: true,
+        });
+        
+        if (attempt > 1) {
+          logger.info(`Message sent after retry`, context, { attempts: attempt });
+        }
+        
         return;
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
-        this.log('warn', `Send message attempt ${attempt} failed`, context, lastError);
+        
+        logger.warn(`Send message attempt ${attempt} failed`, context, lastError, {
+          attempt,
+          maxRetries,
+        });
+
+        // Check if error is retryable
+        const isRetryable = this.isRetryableError(lastError);
+        
+        if (!isRetryable || attempt >= maxRetries) {
+          logger.endMetric(metricId, context, {
+            attempts: attempt,
+            success: false,
+            error: lastError.message,
+          });
+          break;
+        }
 
         if (attempt < maxRetries) {
           // Exponential backoff: 1s, 2s, 4s
           const delay = Math.pow(2, attempt - 1) * 1000;
+          logger.debug(`Retrying after ${delay}ms`, context, { delay, attempt });
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
@@ -443,9 +598,50 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
   }
 
   /**
+   * Check if an error is retryable
+   */
+  private isRetryableError(error: Error): boolean {
+    const message = error.message.toLowerCase();
+    
+    // Network errors, timeouts, and 5xx errors are retryable
+    if (message.includes('timeout') || 
+        message.includes('econnreset') ||
+        message.includes('enotfound') ||
+        message.includes('500') ||
+        message.includes('502') ||
+        message.includes('503') ||
+        message.includes('504')) {
+      return true;
+    }
+    
+    // 4xx errors (except 429 rate limit) are not retryable
+    if (message.includes('400') ||
+        message.includes('401') ||
+        message.includes('403') ||
+        message.includes('404')) {
+      return false;
+    }
+    
+    // Rate limit errors are retryable
+    if (message.includes('429') || message.includes('rate limit')) {
+      return true;
+    }
+    
+    // Default: retry for unknown errors
+    return true;
+  }
+
+  /**
    * Get the event dispatcher for use with web server
    */
   getEventDispatcher(): lark.EventDispatcher {
     return this.eventDispatcher;
+  }
+
+  /**
+   * Get storage instance (for testing)
+   */
+  getStorage(): ConversationStorage {
+    return this.storage;
   }
 }
