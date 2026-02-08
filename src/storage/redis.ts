@@ -1,20 +1,35 @@
-import { Redis } from '@upstash/redis';
+import { createRequire } from 'module';
 import type { ConversationMessage } from '../types.js';
 import type { ConversationStorage } from './interface.js';
 import { logger } from '../utils/logger.js';
+
+const require = createRequire(import.meta.url);
+
+interface RedisLikeClient {
+  get<T>(key: string): Promise<T | null>;
+  set(key: string, value: unknown, options?: { ex?: number }): Promise<unknown>;
+  sadd(key: string, value: string): Promise<unknown>;
+  srem(key: string, value: string): Promise<unknown>;
+  smembers(key: string): Promise<unknown>;
+  del(key: string): Promise<unknown>;
+}
 
 /**
  * Redis-based conversation storage using Upstash
  * Used for production deployment on Vercel
  */
 export class RedisStorage implements ConversationStorage {
-  private redis: Redis;
+  private redis: RedisLikeClient;
   private readonly HISTORY_PREFIX = 'conversation:';
   private readonly TIMESTAMP_PREFIX = 'timestamp:';
   private readonly CHATIDS_KEY = 'chatids';
 
   constructor(redisUrl: string, redisToken: string) {
-    this.redis = new Redis({
+    const upstash = require('@upstash/redis') as {
+      Redis: new (args: { url: string; token: string }) => RedisLikeClient;
+    };
+
+    this.redis = new upstash.Redis({
       url: redisUrl,
       token: redisToken,
     });

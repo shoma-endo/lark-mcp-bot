@@ -18,7 +18,7 @@ import {
   LLMError,
   ToolExecutionError,
   LarkAPIError,
-  RateLimitError,
+  APIRateLimitError,
   ResourcePackageError,
   ValidationError,
   LarkBotError,
@@ -107,6 +107,25 @@ export class LarkMCPBot {
     const topLevelCode = apiError?.code;
     const code = nestedCode ?? topLevelCode;
     return code === undefined || code === null ? undefined : String(code);
+  }
+
+  /**
+   * Map GLM API business error code into user-facing error class.
+   */
+  private mapApiErrorToBotError(error: unknown, fallbackError: Error): LarkBotError | null {
+    const businessCode = this.getApiBusinessErrorCode(error);
+
+    // Billing/package-related limitations
+    if (businessCode === '1113' || businessCode === '1308' || businessCode === '1309') {
+      return new ResourcePackageError(`GLM API billing/resource error (${businessCode})`, fallbackError);
+    }
+
+    // API frequency/concurrency limits
+    if (businessCode === '1302' || businessCode === '1303' || businessCode === '1305') {
+      return new APIRateLimitError(`GLM API throttled (${businessCode})`, fallbackError);
+    }
+
+    return null;
   }
 
   /**
@@ -412,15 +431,14 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
         
         const err = error instanceof Error ? error : new Error(String(error));
         logger.error('GLM completion request failed', context, err, this.getApiErrorDetails(error));
-        const businessCode = this.getApiBusinessErrorCode(error);
-
-        if (businessCode === '1113') {
-          throw new ResourcePackageError('GLM API balance/package exhausted', err);
+        const mappedError = this.mapApiErrorToBotError(error, err);
+        if (mappedError) {
+          throw mappedError;
         }
         
         // Check for rate limit errors
         if (err.message.includes('429') || err.message.toLowerCase().includes('rate limit')) {
-          throw new RateLimitError('GLM API rate limit exceeded', undefined, err);
+          throw new APIRateLimitError('GLM API rate limit exceeded', err);
         }
         
         // Wrap as LLM error
@@ -504,14 +522,13 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
           
           const err = error instanceof Error ? error : new Error(String(error));
           logger.error('GLM follow-up completion request failed', context, err, this.getApiErrorDetails(error));
-          const businessCode = this.getApiBusinessErrorCode(error);
-
-          if (businessCode === '1113') {
-            throw new ResourcePackageError('GLM API balance/package exhausted', err);
+          const mappedError = this.mapApiErrorToBotError(error, err);
+          if (mappedError) {
+            throw mappedError;
           }
           
           if (err.message.includes('429') || err.message.toLowerCase().includes('rate limit')) {
-            throw new RateLimitError('GLM API rate limit exceeded', undefined, err);
+            throw new APIRateLimitError('GLM API rate limit exceeded', err);
           }
           
           throw new LLMError(`Failed to generate follow-up response: ${err.message}`, err);

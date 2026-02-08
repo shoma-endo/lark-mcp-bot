@@ -42,6 +42,9 @@ export default async function handler(
     const adapter = await getAdapter();
     await adapter(req, res);
   } catch (error) {
+    // Reset adapter so the next request can retry clean initialization.
+    adapterPromise = null;
+
     console.error('Webhook adapter error:', {
       deploymentHost,
       deploymentUrl,

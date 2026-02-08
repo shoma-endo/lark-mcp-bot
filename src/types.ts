@@ -214,6 +214,17 @@ export class ResourcePackageError extends LarkBotError {
   }
 }
 
+export class APIRateLimitError extends LarkBotError {
+  constructor(message: string, cause?: Error) {
+    super(message, 'API_RATE_LIMIT_ERROR', true, 429, cause);
+    this.name = 'APIRateLimitError';
+  }
+
+  toUserMessage(): string {
+    return '申し訳ありません。現在API利用が混雑しています。しばらく待ってから再試行してください。';
+  }
+}
+
 export class ValidationError extends LarkBotError {
   constructor(
     message: string,
