@@ -3,23 +3,22 @@ import { adaptDefault } from '@larksuiteoapi/node-sdk';
 
 let adapterPromise: Promise<(req: VercelRequest, res: VercelResponse) => Promise<void>> | null = null;
 const EVENT_DEDUP_TTL_SECONDS = 600;
+const MESSAGE_DEDUP_TTL_SECONDS = 24 * 60 * 60;
 
-function extractDedupEventId(body: unknown): string | null {
+function extractDedupIds(body: unknown): { eventId: string | null; messageId: string | null } {
   const payload = body as {
     header?: { event_id?: string; event_type?: string };
     event_id?: string;
     event?: { message?: { message_id?: string } };
   };
 
-  return (
-    payload?.header?.event_id ||
-    payload?.event_id ||
-    payload?.event?.message?.message_id ||
-    null
-  );
+  const eventId = payload?.header?.event_id || payload?.event_id || null;
+  const messageId = payload?.event?.message?.message_id || null;
+
+  return { eventId, messageId };
 }
 
-async function acquireEventLock(eventId: string): Promise<boolean> {
+async function acquireDedupLock(key: string, ttlSeconds: number): Promise<boolean> {
   const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
   const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
 
@@ -34,10 +33,10 @@ async function acquireEventLock(eventId: string): Promise<boolean> {
     },
     body: JSON.stringify([
       'SET',
-      `dedup:event:${eventId}`,
+      key,
       '1',
       'EX',
-      String(EVENT_DEDUP_TTL_SECONDS),
+      String(ttlSeconds),
       'NX',
     ]),
   });
@@ -86,10 +85,26 @@ export default async function handler(
   }
 
   try {
-    const eventId = extractDedupEventId(req.body);
+    const { eventId, messageId } = extractDedupIds(req.body);
+
+    if (messageId) {
+      const acquiredMessageLock = await acquireDedupLock(
+        `dedup:message:${messageId}`,
+        MESSAGE_DEDUP_TTL_SECONDS
+      );
+      if (!acquiredMessageLock) {
+        console.log('Skipping duplicate webhook message', { messageId });
+        res.status(200).json({ success: true, deduped: true });
+        return;
+      }
+    }
+
     if (eventId) {
-      const acquired = await acquireEventLock(eventId);
-      if (!acquired) {
+      const acquiredEventLock = await acquireDedupLock(
+        `dedup:event:${eventId}`,
+        EVENT_DEDUP_TTL_SECONDS
+      );
+      if (!acquiredEventLock) {
         console.log('Skipping duplicate webhook event', { eventId });
         res.status(200).json({ success: true, deduped: true });
         return;
