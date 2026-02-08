@@ -72,8 +72,8 @@ describe('Config Module', () => {
 
     const { config, LARK_DOMAIN } = await import('../src/config.js');
 
-    expect(config.larkDomain).toBe('https://open.feishu.cn');
-    expect(LARK_DOMAIN).toBe('https://open.feishu.cn');
+    expect(config.larkDomain).toBe('https://open.larksuite.com');
+    expect(LARK_DOMAIN).toBe('https://open.larksuite.com');
   });
 
   it('should have correct GLM API base URL', async () => {
