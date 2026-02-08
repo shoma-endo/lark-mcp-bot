@@ -351,6 +351,12 @@ export class LarkMCPBot {
     try {
       logger.startMetric(metricId, 'handle_message_receive', { chatId, userId });
 
+      // Prevent message loop: ignore messages sent by bot/app itself.
+      if (sender?.sender_type === 'app') {
+        logger.debug('Skipping message from app sender', context);
+        return;
+      }
+
       if (!this.shouldProcessMessage(message.message_id)) {
         logger.info('Skipping duplicate message event', context);
         return;
