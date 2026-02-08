@@ -1,5 +1,5 @@
 {
-  "buildCommand": "mkdir -p dist && echo \"No build step required for Vercel API Routes\"",
+  "buildCommand": "mkdir -p dist && echo \"ok\" > dist/index.html && echo \"No build step required for Vercel API Routes\"",
   "devCommand": "npm run dev",
   "installCommand": "npm install --include=dev",
   "rewrites": [
