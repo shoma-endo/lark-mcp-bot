@@ -1,0 +1,16 @@
+{
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install --include=dev",
+  "rewrites": [
+    {
+      "source": "/webhook/event",
+      "destination": "/api/webhook"
+    }
+  ],
+  "functions": {
+    "api/webhook.ts": {
+      "maxDuration": 60
+    }
+  }
+}
