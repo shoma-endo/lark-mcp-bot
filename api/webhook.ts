@@ -24,5 +24,24 @@ export default async function handler(
     return;
   }
 
-  await adapter(req, res);
+  try {
+    await adapter(req, res);
+  } catch (error) {
+    console.error('Webhook adapter error:', {
+      deploymentHost,
+      deploymentUrl,
+      commitSha,
+      method: req.method,
+      url: req.url,
+      error: error instanceof Error ? {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+      } : String(error),
+    });
+
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Webhook processing failed' });
+    }
+  }
 }
