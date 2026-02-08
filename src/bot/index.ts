@@ -19,6 +19,7 @@ import {
   ToolExecutionError,
   LarkAPIError,
   RateLimitError,
+  ResourcePackageError,
   ValidationError,
   LarkBotError,
 } from '../types.js';
@@ -52,9 +53,11 @@ export class LarkMCPBot {
 
   // Conversation TTL settings
   private readonly CONVERSATION_TTL_MS = 60 * 60 * 1000; // 1 hour
+  private readonly MESSAGE_DEDUP_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
   // MCP tools as GLM function definitions
   private functionDefinitions: FunctionDefinition[] = [];
+  private processedMessageIds: Map<string, number> = new Map();
 
   /**
    * Extract detailed OpenAI-compatible API error fields for diagnostics.
@@ -87,6 +90,47 @@ export class LarkMCPBot {
       responseErrorMessage: apiError?.error?.message,
       xRequestId: apiError?.headers?.['x-request-id'],
     };
+  }
+
+  /**
+   * Extract business error code from OpenAI-compatible API error object.
+   */
+  private getApiBusinessErrorCode(error: unknown): string | undefined {
+    const apiError = error as {
+      code?: string | number;
+      error?: {
+        code?: string | number;
+      };
+    };
+
+    const nestedCode = apiError?.error?.code;
+    const topLevelCode = apiError?.code;
+    const code = nestedCode ?? topLevelCode;
+    return code === undefined || code === null ? undefined : String(code);
+  }
+
+  /**
+   * Check and mark message ID to avoid duplicate replies when webhook events are retried.
+   */
+  private shouldProcessMessage(messageId?: string): boolean {
+    if (!messageId) return true;
+
+    const now = Date.now();
+
+    // Clean up expired dedup entries
+    for (const [id, ts] of this.processedMessageIds.entries()) {
+      if (now - ts > this.MESSAGE_DEDUP_TTL_MS) {
+        this.processedMessageIds.delete(id);
+      }
+    }
+
+    const previous = this.processedMessageIds.get(messageId);
+    if (previous && now - previous <= this.MESSAGE_DEDUP_TTL_MS) {
+      return false;
+    }
+
+    this.processedMessageIds.set(messageId, now);
+    return true;
   }
 
   constructor(storage?: ConversationStorage) {
@@ -287,6 +331,11 @@ export class LarkMCPBot {
 
     try {
       logger.startMetric(metricId, 'handle_message_receive', { chatId, userId });
+
+      if (!this.shouldProcessMessage(message.message_id)) {
+        logger.info('Skipping duplicate message event', context);
+        return;
+      }
       
       // Clean up expired conversations periodically
       await this.cleanupExpiredConversations();
@@ -363,6 +412,11 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
         
         const err = error instanceof Error ? error : new Error(String(error));
         logger.error('GLM completion request failed', context, err, this.getApiErrorDetails(error));
+        const businessCode = this.getApiBusinessErrorCode(error);
+
+        if (businessCode === '1113') {
+          throw new ResourcePackageError('GLM API balance/package exhausted', err);
+        }
         
         // Check for rate limit errors
         if (err.message.includes('429') || err.message.toLowerCase().includes('rate limit')) {
@@ -450,6 +504,11 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
           
           const err = error instanceof Error ? error : new Error(String(error));
           logger.error('GLM follow-up completion request failed', context, err, this.getApiErrorDetails(error));
+          const businessCode = this.getApiBusinessErrorCode(error);
+
+          if (businessCode === '1113') {
+            throw new ResourcePackageError('GLM API balance/package exhausted', err);
+          }
           
           if (err.message.includes('429') || err.message.toLowerCase().includes('rate limit')) {
             throw new RateLimitError('GLM API rate limit exceeded', undefined, err);

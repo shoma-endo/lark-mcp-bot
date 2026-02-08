@@ -203,6 +203,17 @@ export class RateLimitError extends LarkBotError {
   }
 }
 
+export class ResourcePackageError extends LarkBotError {
+  constructor(message: string, cause?: Error) {
+    super(message, 'RESOURCE_PACKAGE_ERROR', false, 429, cause);
+    this.name = 'ResourcePackageError';
+  }
+
+  toUserMessage(): string {
+    return '申し訳ありません。現在AI APIの利用枠（残高またはリソースパッケージ）が不足しています。管理者にご確認ください。';
+  }
+}
+
 export class ValidationError extends LarkBotError {
   constructor(
     message: string,
