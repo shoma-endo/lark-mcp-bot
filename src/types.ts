@@ -123,17 +123,36 @@ export class LarkBotError extends Error {
     message: string,
     public readonly code: string,
     public readonly retryable: boolean = false,
+    public readonly statusCode?: number,
     public readonly cause?: Error
   ) {
     super(message);
     this.name = 'LarkBotError';
+    // Maintain proper stack trace
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, this.constructor);
+    }
+  }
+
+  /**
+   * Convert error to user-friendly message
+   */
+  toUserMessage(): string {
+    return '申し訳ありません。エラーが発生しました。もう一度お試しください。';
   }
 }
 
 export class LLMError extends LarkBotError {
-  constructor(message: string, cause?: Error) {
-    super(message, 'LLM_ERROR', true, cause);
+  constructor(message: string, cause?: Error, statusCode?: number) {
+    super(message, 'LLM_ERROR', true, statusCode, cause);
     this.name = 'LLMError';
+  }
+
+  toUserMessage(): string {
+    if (this.statusCode === 429) {
+      return '申し訳ありません。現在リクエストが集中しています。しばらく待ってからお試しください。';
+    }
+    return '申し訳ありません。AI応答の生成中にエラーが発生しました。しばらくしてからお試しください。';
   }
 }
 
@@ -143,15 +162,62 @@ export class ToolExecutionError extends LarkBotError {
     public readonly toolName: string,
     cause?: Error
   ) {
-    super(message, 'TOOL_EXECUTION_ERROR', false, cause);
+    super(message, 'TOOL_EXECUTION_ERROR', false, undefined, cause);
     this.name = 'ToolExecutionError';
+  }
+
+  toUserMessage(): string {
+    return `申し訳ありません。ツール「${this.toolName}」の実行中にエラーが発生しました。`;
   }
 }
 
 export class LarkAPIError extends LarkBotError {
-  constructor(message: string, cause?: Error) {
-    super(message, 'LARK_API_ERROR', true, cause);
+  constructor(message: string, cause?: Error, statusCode?: number) {
+    super(message, 'LARK_API_ERROR', true, statusCode, cause);
     this.name = 'LarkAPIError';
+  }
+
+  toUserMessage(): string {
+    if (this.statusCode === 401 || this.statusCode === 403) {
+      return '申し訳ありません。認証エラーが発生しました。管理者に連絡してください。';
+    }
+    return '申し訳ありません。Lark APIとの通信中にエラーが発生しました。';
+  }
+}
+
+export class RateLimitError extends LarkBotError {
+  constructor(
+    message: string,
+    public readonly retryAfter?: number,
+    cause?: Error
+  ) {
+    super(message, 'RATE_LIMIT_ERROR', true, 429, cause);
+    this.name = 'RateLimitError';
+  }
+
+  toUserMessage(): string {
+    if (this.retryAfter) {
+      return `申し訳ありません。レート制限に達しました。${this.retryAfter}秒後に再試行してください。`;
+    }
+    return '申し訳ありません。レート制限に達しました。しばらく待ってからお試しください。';
+  }
+}
+
+export class ValidationError extends LarkBotError {
+  constructor(
+    message: string,
+    public readonly field?: string,
+    cause?: Error
+  ) {
+    super(message, 'VALIDATION_ERROR', false, 400, cause);
+    this.name = 'ValidationError';
+  }
+
+  toUserMessage(): string {
+    if (this.field) {
+      return `申し訳ありません。入力データが不正です（${this.field}）。`;
+    }
+    return '申し訳ありません。入力データが不正です。';
   }
 }
 
