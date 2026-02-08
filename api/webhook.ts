@@ -16,6 +16,11 @@ export default async function handler(
   req: VercelRequest,
   res: VercelResponse
 ) {
+  const deploymentHost = req.headers.host || 'unknown-host';
+  const commitSha = process.env.VERCEL_GIT_COMMIT_SHA || 'unknown-sha';
+  const deploymentUrl = process.env.VERCEL_URL || 'unknown-vercel-url';
+  console.log('Webhook request context:', { deploymentHost, deploymentUrl, commitSha });
+
   // Immediately return for non-POST
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
