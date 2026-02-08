@@ -60,7 +60,9 @@ export default async function handler(
       console.log('Message text:', messageText.substring(0, 100));
 
       try {
-        const replyText = `受信しました: ${messageText}`;
+        const cleanText = messageText.replace(/@_user_\d+\s*/g, '').trim();
+        const replyText = `受信しました: ${cleanText || 'メッセージを確認しました。'}`;
+        console.log('Sending reply to chat:', chatId, 'replyPreview:', replyText.substring(0, 100));
         await larkClient.im.message.create({
           params: { receive_id_type: 'chat_id' },
           data: {
@@ -71,7 +73,7 @@ export default async function handler(
         });
         console.log('Reply sent successfully to', chatId);
       } catch (err) {
-        console.error('Send message error:', err instanceof Error ? err.message : err);
+        console.error('Send message error:', err);
       }
     } else {
       console.log('Skip: not text message or no chatId', { messageType, chatId });
