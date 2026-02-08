@@ -2,6 +2,53 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { adaptDefault } from '@larksuiteoapi/node-sdk';
 
 let adapterPromise: Promise<(req: VercelRequest, res: VercelResponse) => Promise<void>> | null = null;
+const EVENT_DEDUP_TTL_SECONDS = 600;
+
+function extractDedupEventId(body: unknown): string | null {
+  const payload = body as {
+    header?: { event_id?: string; event_type?: string };
+    event_id?: string;
+    event?: { message?: { message_id?: string } };
+  };
+
+  return (
+    payload?.header?.event_id ||
+    payload?.event_id ||
+    payload?.event?.message?.message_id ||
+    null
+  );
+}
+
+async function acquireEventLock(eventId: string): Promise<boolean> {
+  const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
+  const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+  // If Redis is not configured, keep processing rather than blocking webhook flow.
+  if (!redisUrl || !redisToken) return true;
+
+  const response = await fetch(redisUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${redisToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify([
+      'SET',
+      `dedup:event:${eventId}`,
+      '1',
+      'EX',
+      String(EVENT_DEDUP_TTL_SECONDS),
+      'NX',
+    ]),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Upstash dedup request failed: ${response.status} ${response.statusText}`);
+  }
+
+  const data = (await response.json()) as { result?: string | null };
+  return data.result === 'OK';
+}
 
 async function getAdapter(): Promise<(req: VercelRequest, res: VercelResponse) => Promise<void>> {
   if (!adapterPromise) {
@@ -39,6 +86,16 @@ export default async function handler(
   }
 
   try {
+    const eventId = extractDedupEventId(req.body);
+    if (eventId) {
+      const acquired = await acquireEventLock(eventId);
+      if (!acquired) {
+        console.log('Skipping duplicate webhook event', { eventId });
+        res.status(200).json({ success: true, deduped: true });
+        return;
+      }
+    }
+
     const adapter = await getAdapter();
     await adapter(req, res);
   } catch (error) {
