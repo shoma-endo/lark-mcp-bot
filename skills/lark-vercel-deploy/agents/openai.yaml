@@ -1,0 +1,4 @@
+interface:
+  display_name: "Lark Vercel Deploy"
+  short_description: "Prevent and resolve this repo's Vercel deployment failures"
+  default_prompt: "Diagnose and fix lark-mcp-bot Vercel deploy issues using the repository's known failure patterns."
