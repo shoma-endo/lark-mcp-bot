@@ -53,7 +53,8 @@ export class LarkMCPBot {
 
   // Conversation TTL settings
   private readonly CONVERSATION_TTL_MS = 60 * 60 * 1000; // 1 hour
-  private readonly MESSAGE_DEDUP_TTL_MS = 5 * 60 * 1000; // 5 minutes
+  private readonly MESSAGE_DEDUP_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+  private readonly MESSAGE_DEDUP_TTL_SECONDS = 24 * 60 * 60; // 24 hours
 
   // MCP tools as GLM function definitions
   private functionDefinitions: FunctionDefinition[] = [];
@@ -131,8 +132,43 @@ export class LarkMCPBot {
   /**
    * Check and mark message ID to avoid duplicate replies when webhook events are retried.
    */
-  private shouldProcessMessage(messageId?: string): boolean {
+  private async shouldProcessMessage(messageId?: string, chatId?: string): Promise<boolean> {
     if (!messageId) return true;
+
+    const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
+    const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+    if (redisUrl && redisToken) {
+      try {
+        const response = await fetch(redisUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${redisToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify([
+            'SET',
+            `dedup:bot-message:${chatId || 'unknown'}:${messageId}`,
+            '1',
+            'EX',
+            String(this.MESSAGE_DEDUP_TTL_SECONDS),
+            'NX',
+          ]),
+        });
+
+        if (response.ok) {
+          const payload = (await response.json()) as { result?: string | null };
+          if (payload.result !== 'OK') {
+            return false;
+          }
+        } else {
+          logger.warn('Redis dedup request failed, using in-memory fallback', { chatId, messageId } as LogContext);
+        }
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        logger.warn('Redis dedup failed, using in-memory fallback', { chatId, messageId } as LogContext, err);
+      }
+    }
 
     const now = Date.now();
 
@@ -357,7 +393,7 @@ export class LarkMCPBot {
         return;
       }
 
-      if (!this.shouldProcessMessage(message.message_id)) {
+      if (!(await this.shouldProcessMessage(message.message_id, chatId))) {
         logger.info('Skipping duplicate message event', context);
         return;
       }
