@@ -1,11 +1,25 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { adaptDefault } from '@larksuiteoapi/node-sdk';
-import { LarkMCPBot } from '../src/bot/index.js';
 
-const bot = new LarkMCPBot();
-const adapter = adaptDefault('/webhook/event', bot.getEventDispatcher(), {
-  autoChallenge: true,
-});
+let adapterPromise: Promise<(req: VercelRequest, res: VercelResponse) => Promise<void>> | null = null;
+
+async function getAdapter(): Promise<(req: VercelRequest, res: VercelResponse) => Promise<void>> {
+  if (!adapterPromise) {
+    adapterPromise = (async () => {
+      // Vercel runtime uses ephemeral filesystem; force MCP logger state under /tmp.
+      process.env.XDG_STATE_HOME = process.env.XDG_STATE_HOME || '/tmp';
+      process.env.HOME = process.env.HOME || '/tmp';
+
+      const { LarkMCPBot } = await import('../src/bot/index.js');
+      const bot = new LarkMCPBot();
+      return adaptDefault('/webhook/event', bot.getEventDispatcher(), {
+        autoChallenge: true,
+      }) as (req: VercelRequest, res: VercelResponse) => Promise<void>;
+    })();
+  }
+
+  return adapterPromise;
+}
 
 export default async function handler(
   req: VercelRequest,
@@ -25,6 +39,7 @@ export default async function handler(
   }
 
   try {
+    const adapter = await getAdapter();
     await adapter(req, res);
   } catch (error) {
     console.error('Webhook adapter error:', {
