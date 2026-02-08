@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "echo \"No build step required for Vercel API Routes\"",
   "devCommand": "npm run dev",
   "installCommand": "npm install --include=dev",
   "rewrites": [
