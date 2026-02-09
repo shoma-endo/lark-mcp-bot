@@ -21,6 +21,166 @@ Lark（Feishu）のテナント内をMCP（Model Context Protocol）経由で自
 | ドキュメント読み取り | Larkドキュメントの内容取得 |
 | Bitable操作 | Baseのレコード検索・作成・更新 |
 
+## 🏗️ アーキテクチャ
+
+### 全体構成
+
+```mermaid
+graph TB
+    subgraph "External Services"
+        LarkAPI["Lark Open Platform"]
+        GLM["GLM-4.7<br/>(Zhipu AI)"]
+        Redis["Upstash Redis"]
+    end
+
+    subgraph "Entry Points"
+        Local["Local Server<br/>:3000/webhook/event"]
+        Vercel["Vercel Serverless<br/>api/webhook.ts"]
+    end
+
+    subgraph "Core System"
+        ED["EventDispatcher<br/>im.message.receive_v1"]
+        Bot["LarkMCPBot"]
+        MCP["MCP Tool Layer<br/>100+ Lark API Tools"]
+        Storage["ConversationStorage"]
+    end
+
+    subgraph "Storage Backends"
+        Mem["MemoryStorage<br/>(開発用)"]
+        RedisStore["RedisStorage<br/>(本番用)"]
+    end
+
+    LarkAPI -- "Webhook Event" --> Local
+    LarkAPI -- "Webhook Event" --> Vercel
+    Local --> ED
+    Vercel --> ED
+    ED --> Bot
+    Bot -- "Function Calling" --> GLM
+    Bot -- "Tool実行" --> MCP
+    MCP -- "API Call" --> LarkAPI
+    Bot --> Storage
+    Storage --> Mem
+    Storage --> RedisStore
+    RedisStore --> Redis
+    Bot -- "応答送信" --> LarkAPI
+```
+
+### メッセージ処理シーケンス
+
+ユーザーがLarkでボットにメンションしてから応答が返るまでの流れ:
+
+```mermaid
+sequenceDiagram
+    participant U as Larkユーザー
+    participant L as Lark API
+    participant W as Webhook<br/>(Local/Vercel)
+    participant B as LarkMCPBot
+    participant S as Storage<br/>(Redis/Memory)
+    participant G as GLM-4.7
+    participant M as MCP Tools
+
+    U->>L: @bot メッセージ送信
+    L->>W: im.message.receive_v1
+    W->>B: handleMessageReceive()
+
+    B->>S: getHistory(chatId)
+    S-->>B: 会話履歴
+
+    B->>G: chat.completions.create()<br/>(messages + tools定義)
+
+    alt Tool呼び出しが必要な場合
+        G-->>B: tool_calls: [{name, arguments}]
+        B->>M: executeToolCall()
+        M->>L: Lark API実行
+        L-->>M: API結果
+        M-->>B: ツール実行結果
+        B->>G: 再度呼び出し(ツール結果付き)
+        G-->>B: 最終応答テキスト
+    else 直接応答の場合
+        G-->>B: 応答テキスト
+    end
+
+    B->>S: setHistory(chatId, messages)
+    B->>L: sendMessage(応答)
+    L->>U: ボット応答表示
+```
+
+### エラーハンドリング階層
+
+```mermaid
+graph TD
+    Base["LarkBotError<br/>(基底クラス)"]
+    Base --> LLM["LLMError<br/>リトライ可 / 429検知"]
+    Base --> Tool["ToolExecutionError<br/>リトライ不可"]
+    Base --> API["LarkAPIError<br/>リトライ可 / 認証・ネットワーク"]
+    Base --> Rate["RateLimitError<br/>リトライ可 / 429"]
+    Base --> Res["ResourcePackageError<br/>GLM残高不足"]
+    Base --> APIRate["APIRateLimitError<br/>API同時実行制限"]
+    Base --> Val["ValidationError<br/>入力バリデーション"]
+
+    style Base fill:#f9f,stroke:#333
+    style LLM fill:#ff9,stroke:#333
+    style Rate fill:#ff9,stroke:#333
+    style API fill:#ff9,stroke:#333
+    style Tool fill:#f99,stroke:#333
+    style Res fill:#f99,stroke:#333
+    style Val fill:#f99,stroke:#333
+    style APIRate fill:#ff9,stroke:#333
+```
+
+### Miyabi Agent ワークフロー（自律開発パイプライン）
+
+GitHub Issueの作成からデプロイまでの自律型開発フロー:
+
+```mermaid
+sequenceDiagram
+    participant H as 人間
+    participant I as IssueAgent
+    participant C as CoordinatorAgent
+    participant CG as CodeGenAgent
+    participant R as ReviewAgent
+    participant T as TestAgent
+    participant PR as PRAgent
+    participant D as DeploymentAgent
+
+    H->>I: Issue作成
+    I->>I: 65ラベル体系で自動分類<br/>(type/priority/complexity)
+    I->>C: ラベル付きIssue
+
+    C->>C: DAGベースでタスク分解<br/>Critical Path特定
+    C->>CG: タスク割当
+
+    CG->>CG: コード生成 + テスト生成<br/>(TypeScript strict mode)
+    CG->>R: コード提出
+
+    R->>R: 静的解析・セキュリティスキャン<br/>品質スコアリング
+
+    alt スコア < 80点
+        R-->>CG: 差し戻し(修正指示)
+        CG->>R: 修正コード再提出
+    end
+
+    R->>T: 品質合格(≥80点)
+    T->>T: テスト実行<br/>カバレッジ確認
+
+    alt カバレッジ < 80%
+        T-->>CG: テスト追加要求
+        CG->>T: テスト追加
+    end
+
+    T->>PR: テスト合格
+    PR->>PR: Draft PR自動作成<br/>(Conventional Commits準拠)
+    PR->>H: レビュー依頼
+
+    H->>D: PR マージ
+    D->>D: 自動デプロイ<br/>ヘルスチェック
+
+    alt ヘルスチェック失敗
+        D->>D: 自動Rollback
+        D->>H: エスカレーション通知
+    end
+```
+
 ## 🚀 セットアップ
 
 ### 1. 依存関係のインストール
