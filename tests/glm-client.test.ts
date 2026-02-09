@@ -44,7 +44,7 @@ describe('GLMClient', () => {
 
       expect(mockFetch).toHaveBeenCalledTimes(1);
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+        'https://api.z.ai/api/paas/v4/chat/completions',
         expect.objectContaining({
           method: 'POST',
           headers: {

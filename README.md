@@ -203,7 +203,7 @@ LARK_DOMAIN=https://open.feishu.cn
 
 # GLM-4.7 API Key (Zhipu AI)
 GLM_API_KEY=your_glm_api_key_here
-GLM_API_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+GLM_API_BASE_URL=https://api.z.ai/api/paas/v4
 GLM_MODEL=glm-4.7
 
 # Server Configuration
@@ -363,5 +363,5 @@ MIT License
 ## 🙏 参考リンク
 
 - [Lark Open Platform](https://open.feishu.cn/)
-- [Zhipu AI GLM-4.7](https://docs.bigmodel.cn/cn/guide/start/model-overview)
+- [Zhipu AI GLM-4.7](https://docs.z.ai/guides/llm/glm-4.7)
 - [Model Context Protocol](https://modelcontextprotocol.io/)

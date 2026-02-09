@@ -83,8 +83,8 @@ describe('Config Module', () => {
 
     const { config, GLM_API_BASE_URL } = await import('../src/config.js');
 
-    expect(config.glmApiBaseUrl).toBe('https://open.bigmodel.cn/api/paas/v4');
-    expect(GLM_API_BASE_URL).toBe('https://open.bigmodel.cn/api/paas/v4');
+    expect(config.glmApiBaseUrl).toBe('https://api.z.ai/api/paas/v4');
+    expect(GLM_API_BASE_URL).toBe('https://api.z.ai/api/paas/v4');
   });
 
   it('should have correct GLM model', async () => {
