@@ -2,10 +2,13 @@ name: Update Project Status
 
 # Update project status based on PR state
 on:
-  pull_request:
-    types: [opened, closed, reopened]
-  issues:
-    types: [closed, reopened]
+  workflow_dispatch:
+  # Disabled: depends on agents/github/projects-v2.ts which does not exist yet.
+  # Re-enable these triggers once the module is implemented.
+  # pull_request:
+  #   types: [opened, closed, reopened]
+  # issues:
+  #   types: [closed, reopened]
 
 jobs:
   update-status:
