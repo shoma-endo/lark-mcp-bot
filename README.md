@@ -233,7 +233,10 @@ LARK_APP_SECRET=your_app_secret_here
 
 # GLM-4.7 API Key (Zhipu AI)
 GLM_API_KEY=your_glm_api_key_here
-GLM_API_BASE_URL=https://api.z.ai/api/paas/v4
+# Coding Plan endpoint:
+# - Claude Code / Goose: https://api.z.ai/api/anthropic
+# - Other tools: https://api.z.ai/api/coding/paas/v4
+GLM_API_BASE_URL=https://api.z.ai/api/coding/paas/v4
 GLM_MODEL=glm-4.7
 
 # Server Configuration
