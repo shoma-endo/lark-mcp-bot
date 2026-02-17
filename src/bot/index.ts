@@ -69,6 +69,33 @@ export class LarkMCPBot {
   }
 
   /**
+   * Generate an error reply via LLM instead of hardcoded template messages.
+   */
+  private async generateLlmErrorReply(userMessage: string, error: Error): Promise<string> {
+    const completion = await this.openai.chat.completions.create({
+      model: config.glmModel,
+      messages: [
+        {
+          role: 'system',
+          content: 'あなたはLarkボットです。システムエラー時の短い案内文を日本語で1-2文で作成してください。憶測はせず、再試行や確認方法を具体的に示してください。',
+        },
+        {
+          role: 'user',
+          content: `ユーザー入力: ${userMessage || '(なし)'}\nエラー: ${error.message}\nこの状況でユーザーに返すメッセージを作成してください。`,
+        },
+      ],
+      temperature: 0.2,
+      max_tokens: 300,
+    });
+
+    const text = completion.choices[0]?.message?.content?.trim();
+    if (!text) {
+      throw new Error('LLM returned empty error reply');
+    }
+    return text;
+  }
+
+  /**
    * Extract detailed OpenAI-compatible API error fields for diagnostics.
    */
   private getApiErrorDetails(error: unknown): Record<string, unknown> {
@@ -385,6 +412,7 @@ export class LarkMCPBot {
     const userId = sender?.sender_id?.user_id || 'unknown';
     const context: LogContext = { chatId, userId, messageId: message.message_id };
     const metricId = `handle_message_${chatId}_${Date.now()}`;
+    let cleanTextForError = '';
 
     try {
       logger.startMetric(metricId, 'handle_message_receive', { chatId, userId });
@@ -427,6 +455,7 @@ export class LarkMCPBot {
 
       // Remove mention from message text
       const cleanText = messageText.replace(/@_user_\d+\s*/g, '');
+      cleanTextForError = cleanText;
 
       // Add user message to history
       history.push({ role: 'user', content: cleanText });
@@ -578,7 +607,10 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
           throw new LLMError(`Failed to generate follow-up response: ${err.message}`, err);
         }
 
-        const finalResponse = followUpCompletion.choices[0].message.content || 'すみません、応答を生成できませんでした。';
+        const finalResponse = followUpCompletion.choices[0].message.content?.trim();
+        if (!finalResponse) {
+          throw new LLMError('Follow-up response is empty');
+        }
 
         // Add final assistant response to history
         history.push({ role: 'assistant', content: finalResponse });
@@ -602,7 +634,10 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
         logger.info(`Response sent (with tool calls)`, context, { responseLength: finalResponse.length });
       } else {
         // No tool calls, just respond
-        const responseText = responseMessage.content || 'すみません、応答を生成できませんでした。';
+        const responseText = responseMessage.content?.trim();
+        if (!responseText) {
+          throw new LLMError('Response is empty');
+        }
 
         // Add assistant response to history
         history.push({ role: 'assistant', content: responseText });
@@ -633,18 +668,11 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
       });
       logger.error(`Error handling message`, context, err);
 
-      // Determine error type and message using custom error classes
       let userErrorMessage: string;
-      
-      if (error instanceof LarkBotError) {
-        // Use the custom error's user-friendly message
-        userErrorMessage = error.toUserMessage();
-      } else if (error instanceof Error && error.message.includes('rate limit')) {
-        // Handle rate limit errors from external APIs
-        userErrorMessage = '申し訳ありません。現在リクエストが集中しています。しばらく待ってからお試しください。';
-      } else {
-        // Generic error message for unknown errors
-        userErrorMessage = '申し訳ありません。エラーが発生しました。もう一度お試しください。';
+      try {
+        userErrorMessage = await this.generateLlmErrorReply(cleanTextForError, err);
+      } catch {
+        userErrorMessage = `Error: ${err.message}`;
       }
 
       // Send error message with retry
