@@ -1,9 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Mock environment variables
-vi.stubEnv('LARK_APP_ID', 'test-app-id');
-vi.stubEnv('LARK_APP_SECRET', 'test-app-secret');
-vi.stubEnv('GLM_API_KEY', 'test-glm-key');
+const TEST_GLM_BASE_URL = 'https://example.test/api/v1';
 
 // Mock fetch globally
 const mockFetch = vi.fn();
@@ -12,6 +9,11 @@ vi.stubGlobal('fetch', mockFetch);
 describe('GLMClient', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.resetModules();
+    vi.stubEnv('LARK_APP_ID', 'test-app-id');
+    vi.stubEnv('LARK_APP_SECRET', 'test-app-secret');
+    vi.stubEnv('GLM_API_KEY', 'test-glm-key');
+    vi.stubEnv('GLM_API_BASE_URL', TEST_GLM_BASE_URL);
   });
 
   afterEach(() => {
@@ -44,7 +46,7 @@ describe('GLMClient', () => {
 
       expect(mockFetch).toHaveBeenCalledTimes(1);
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://api.z.ai/api/paas/v4/chat/completions',
+        `${TEST_GLM_BASE_URL}/chat/completions`,
         expect.objectContaining({
           method: 'POST',
           headers: {

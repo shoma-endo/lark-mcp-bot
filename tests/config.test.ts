@@ -8,12 +8,16 @@ vi.mock('dotenv', () => ({
 }));
 
 describe('Config Module', () => {
+  const testBaseUrl = 'https://example.test/api/v1';
+
   beforeEach(() => {
     vi.resetModules();
     // Clear all environment variables before each test
     delete process.env.LARK_APP_ID;
     delete process.env.LARK_APP_SECRET;
     delete process.env.GLM_API_KEY;
+    delete process.env.GLM_API_BASE_URL;
+    delete process.env.GLM_MODEL;
     delete process.env.PORT;
     delete process.env.WEBHOOK_PATH;
   });
@@ -80,11 +84,12 @@ describe('Config Module', () => {
     vi.stubEnv('LARK_APP_ID', 'test-app-id');
     vi.stubEnv('LARK_APP_SECRET', 'test-secret');
     vi.stubEnv('GLM_API_KEY', 'test-key');
+    vi.stubEnv('GLM_API_BASE_URL', testBaseUrl);
 
     const { config, GLM_API_BASE_URL } = await import('../src/config.js');
 
-    expect(config.glmApiBaseUrl).toBe('https://api.z.ai/api/paas/v4');
-    expect(GLM_API_BASE_URL).toBe('https://api.z.ai/api/paas/v4');
+    expect(config.glmApiBaseUrl).toBe(testBaseUrl);
+    expect(GLM_API_BASE_URL).toBe(testBaseUrl);
   });
 
   it('should have correct GLM model', async () => {
