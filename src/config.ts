@@ -22,7 +22,6 @@ export interface Config {
   enablePerformanceMetrics: boolean;
 
   // MCP Tool Filtering
-  enabledToolPrefixes: string[];
   disabledTools: string[];
 }
 
@@ -56,9 +55,7 @@ export const config: Config = {
   enablePerformanceMetrics: getEnvVar('ENABLE_PERFORMANCE_METRICS', 'true') === 'true',
 
   // MCP Tool Filtering (comma-separated)
-  // Only include tools starting with these prefixes (empty = all)
-  enabledToolPrefixes: getEnvVar('ENABLED_TOOL_PREFIXES', 'im.,contact.,drive.,calendar.').split(',').filter(Boolean),
-  // Explicitly disabled tools (comma-separated)
+  // Explicitly disabled tools only
   disabledTools: getEnvVar('DISABLED_TOOLS', '').split(',').filter(Boolean),
 };
 

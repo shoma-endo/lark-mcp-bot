@@ -248,7 +248,6 @@ LOG_LEVEL=info                          # debug/info/warn/error
 ENABLE_PERFORMANCE_METRICS=true         # true/false
 
 # MCP Tool Filtering (オプション)
-ENABLED_TOOL_PREFIXES=im.,contact.,drive.,calendar.  # カンマ区切り、空=全て有効
 DISABLED_TOOLS=                         # 明示的に無効化するツール（カンマ区切り）
 ```
 
@@ -405,9 +404,9 @@ LOG_LEVEL=warn
 
 メッセージ応答が遅い場合、以下を確認：
 
-1. **MCPツールフィルタリング**: 不要なツールを無効化
+1. **MCPツール無効化**: 不要なツールを明示的に無効化
    ```env
-   ENABLED_TOOL_PREFIXES=im.message.  # メッセージ関連のみ
+   DISABLED_TOOLS=drive.v1.permissionMember.create,contact.v3.user.batchGetId
    ```
 
 2. **パフォーマンスメトリクス確認**: ログからボトルネックを特定

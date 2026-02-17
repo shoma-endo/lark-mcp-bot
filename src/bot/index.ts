@@ -224,16 +224,9 @@ export class LarkMCPBot {
    * Filter MCP tools based on configuration
    */
   private filterMcpTools(tools: MCPTool[]): MCPTool[] {
-    const { enabledToolPrefixes, disabledTools } = config;
+    const { disabledTools } = config;
     
     let filtered = tools;
-
-    // Filter by enabled prefixes (if specified)
-    if (enabledToolPrefixes.length > 0) {
-      filtered = filtered.filter((tool) =>
-        enabledToolPrefixes.some((prefix) => tool.name.startsWith(prefix))
-      );
-    }
 
     // Remove explicitly disabled tools
     if (disabledTools.length > 0) {
@@ -243,7 +236,6 @@ export class LarkMCPBot {
     logger.info(`MCP tools filtered`, undefined, {
       totalTools: tools.length,
       filteredTools: filtered.length,
-      enabledPrefixes: enabledToolPrefixes,
       disabledTools: disabledTools,
     });
 
