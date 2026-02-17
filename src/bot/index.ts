@@ -2,6 +2,7 @@ import * as lark from '@larksuiteoapi/node-sdk';
 import OpenAI from 'openai';
 import { LarkMcpTool } from '@larksuiteoapi/lark-mcp/dist/mcp-tool/mcp-tool.js';
 import { larkOapiHandler } from '@larksuiteoapi/lark-mcp/dist/mcp-tool/utils/index.js';
+import { defaultToolNames, presetCalendarToolNames, presetTaskToolNames } from '@larksuiteoapi/lark-mcp/dist/mcp-tool/constants.js';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { createStorage, type ConversationStorage } from '../storage/index.js';
@@ -59,6 +60,13 @@ export class LarkMCPBot {
   // MCP tools as GLM function definitions
   private functionDefinitions: FunctionDefinition[] = [];
   private processedMessageIds: Map<string, number> = new Map();
+
+  /**
+   * Enable lark-mcp default tools with calendar/task presets.
+   */
+  private getEnabledMcpToolNames(): string[] {
+    return [...new Set([...defaultToolNames, ...presetCalendarToolNames, ...presetTaskToolNames])];
+  }
 
   /**
    * Extract detailed OpenAI-compatible API error fields for diagnostics.
@@ -208,6 +216,8 @@ export class LarkMCPBot {
       domain: config.larkDomain,
       toolsOptions: {
         language: 'en',
+        allowTools: this.getEnabledMcpToolNames() as any,
+        allowProjects: ['vc'] as any,
       },
     }, undefined);
 
