@@ -103,7 +103,7 @@ export class LarkMCPBot {
       messages: [
         {
           role: 'system',
-          content: 'あなたはLarkボットです。システムエラー時の短い案内文を日本語で1-2文で作成してください。憶測はせず、再試行や確認方法を具体的に示してください。',
+          content: 'あなたはLarkボットです。システムエラー時の短い案内文を日本語で1-2文で作成してください。憶測はせず、再試行や確認方法を具体的に示してください。Markdown記法や記号装飾（例: **, #）は使わないでください。',
         },
         {
           role: 'user',
@@ -119,6 +119,16 @@ export class LarkMCPBot {
       throw new Error('LLM returned empty error reply');
     }
     return text;
+  }
+
+  /**
+   * Remove markdown-like decoration for Lark plain text messages.
+   */
+  private sanitizeReplyText(text: string): string {
+    return text
+      .replace(/\*\*/g, '')
+      .replace(/^#{1,6}\s*/gm, '')
+      .trim();
   }
 
   /**
@@ -493,7 +503,7 @@ export class LarkMCPBot {
 利用可能なツール:
 ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.description}`).join('\n')}
 
-日本語で丁寧に答えてください。ツールを実行する必要がある場合は、適切なツールを選択してください。`;
+日本語で丁寧に答えてください。ツールを実行する必要がある場合は、適切なツールを選択してください。Markdown記法や記号装飾（例: **, #）は使わず、プレーンテキストで回答してください。`;
 
       // Build messages for GLM
       const messages: ConversationMessage[] = [
@@ -646,6 +656,8 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
           finalResponse += '\n\n' + Array.from(mutationResultUrls).join('\n');
         }
 
+        finalResponse = this.sanitizeReplyText(finalResponse);
+
         // Add final assistant response to history
         history.push({ role: 'assistant', content: finalResponse });
 
@@ -673,8 +685,10 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
           throw new LLMError('Response is empty');
         }
 
+        const sanitizedResponseText = this.sanitizeReplyText(responseText);
+
         // Add assistant response to history
-        history.push({ role: 'assistant', content: responseText });
+        history.push({ role: 'assistant', content: sanitizedResponseText });
 
         // Keep only last 20 messages
         if (history.length > 20) {
@@ -685,13 +699,13 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
         await this.storage.setHistory(chatId, history);
 
         // Send response
-        await this.sendMessageWithRetry(chatId, responseText, context);
+        await this.sendMessageWithRetry(chatId, sanitizedResponseText, context);
 
         logger.endMetric(metricId, context, { 
           withToolCalls: false,
-          responseLength: responseText.length,
+          responseLength: sanitizedResponseText.length,
         });
-        logger.info(`Response sent`, context, { responseLength: responseText.length });
+        logger.info(`Response sent`, context, { responseLength: sanitizedResponseText.length });
       }
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
@@ -704,7 +718,7 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
 
       let userErrorMessage: string;
       try {
-        userErrorMessage = await this.generateLlmErrorReply(cleanTextForError, err);
+        userErrorMessage = this.sanitizeReplyText(await this.generateLlmErrorReply(cleanTextForError, err));
       } catch {
         userErrorMessage = `Error: ${err.message}`;
       }
