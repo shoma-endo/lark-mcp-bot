@@ -25,7 +25,7 @@ describe('GLMClient', () => {
         json: () => Promise.resolve({
           id: 'chat-123',
           created: 1234567890,
-          model: 'glm-4.7',
+          model: 'glm-5',
           choices: [{
             index: 0,
             message: { role: 'assistant', content: 'Hello!' },
@@ -77,7 +77,7 @@ describe('GLMClient', () => {
         json: () => Promise.resolve({
           id: 'chat-123',
           created: 1234567890,
-          model: 'glm-4.7',
+          model: 'glm-5',
           choices: [{ index: 0, message: { role: 'assistant', content: 'Response' }, finish_reason: 'stop' }],
           usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
         }),
@@ -104,7 +104,7 @@ describe('GLMClient', () => {
         json: () => Promise.resolve({
           id: 'chat-123',
           created: 1234567890,
-          model: 'glm-4.7',
+          model: 'glm-5',
           choices: [{ index: 0, message: { role: 'assistant', content: 'Simple response' }, finish_reason: 'stop' }],
           usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
         }),
@@ -124,7 +124,7 @@ describe('GLMClient', () => {
         json: () => Promise.resolve({
           id: 'chat-123',
           created: 1234567890,
-          model: 'glm-4.7',
+          model: 'glm-5',
           choices: [{ index: 0, message: { role: 'assistant', content: 'Response' }, finish_reason: 'stop' }],
           usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
         }),
@@ -147,7 +147,7 @@ describe('GLMClient', () => {
         json: () => Promise.resolve({
           id: 'chat-123',
           created: 1234567890,
-          model: 'glm-4.7',
+          model: 'glm-5',
           choices: [{ index: 0, message: { role: 'assistant', content: '' }, finish_reason: 'stop' }],
           usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
         }),
@@ -169,7 +169,7 @@ describe('GLMClient', () => {
         json: () => Promise.resolve({
           id: 'chat-123',
           created: 1234567890,
-          model: 'glm-4.7',
+          model: 'glm-5',
           choices: [{
             index: 0,
             message: {
@@ -202,7 +202,7 @@ describe('GLMClient', () => {
         json: () => Promise.resolve({
           id: 'chat-123',
           created: 1234567890,
-          model: 'glm-4.7',
+          model: 'glm-5',
           choices: [{
             index: 0,
             message: { role: 'assistant', content: 'Not JSON' },
@@ -230,7 +230,7 @@ describe('GLMClient', () => {
         json: () => Promise.resolve({
           id: 'chat-123',
           created: 1234567890,
-          model: 'glm-4.7',
+          model: 'glm-5',
           choices: [{
             index: 0,
             message: { role: 'assistant', content: 'Generated response' },
@@ -263,7 +263,7 @@ describe('GLMClient', () => {
         json: () => Promise.resolve({
           id: 'chat-123',
           created: 1234567890,
-          model: 'glm-4.7',
+          model: 'glm-5',
           choices: [{
             index: 0,
             message: { role: 'assistant', content: 'Response' },
@@ -294,7 +294,7 @@ describe('GLMClient', () => {
         json: () => Promise.resolve({
           id: 'chat-123',
           created: 1234567890,
-          model: 'glm-4.7',
+          model: 'glm-5',
           choices: [{
             index: 0,
             message: { role: 'assistant', content: null },

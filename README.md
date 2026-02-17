@@ -1,14 +1,16 @@
 # Lark MCP AI Agent Bot
 
-Lark（Feishu）のテナント内をMCP（Model Context Protocol）経由で自由自在に操るAIエージェントボットです。GLM-4.7をLLMとして使用します。
+Lark（Feishu）のテナント内をMCP（Model Context Protocol）経由で自由自在に操るAIエージェントボットです。GLM-5をLLMとして使用します。
 
 ## 🎯 特徴
 
 - **Lark API統合**: `@larksuiteoapi/node-sdk`を使用した完全なLark APIアクセス
-- **MCPツール統合**: `@larksuiteoapi/lark-mcp`による100+のLark APIツールをGLM-4.7のFunction Callingに変換
-- **GLM-4.7連携**: Zhipu AIのGLM-4.7モデルによる高精度な応答生成と自動的なツール選択
+- **MCPツール統合**: `@larksuiteoapi/lark-mcp`による100+のLark APIツールをGLM-5のFunction Callingに変換
+- **MCPツールフィルタリング**: 必要なツールだけを有効化してパフォーマンス最適化
+- **GLM-5連携**: Zhipu AIのGLM-5モデルによる高精度な応答生成と自動的なツール選択
 - **会話履歴管理**: チャットごとのコンテキスト保持（最大30メッセージ）
-- **エラーハンドリング**: 自動リトライ・構造化ログ・適切なエラーメッセージ
+- **強化されたエラーハンドリング**: カスタムエラークラス、自動リトライ、リトライ可否判定
+- **構造化ロギング**: JSON形式のログ、ログレベル設定、パフォーマンスメトリクス計測
 
 ## 📋 できること
 
@@ -29,7 +31,7 @@ Lark（Feishu）のテナント内をMCP（Model Context Protocol）経由で自
 graph TB
     subgraph "External Services"
         LarkAPI["Lark Open Platform"]
-        GLM["GLM-4.7<br/>(Zhipu AI)"]
+        GLM["GLM-5<br/>(Zhipu AI)"]
         Redis["Upstash Redis"]
     end
 
@@ -76,7 +78,7 @@ sequenceDiagram
     participant W as Webhook<br/>(Local/Vercel)
     participant B as LarkMCPBot
     participant S as Storage<br/>(Redis/Memory)
-    participant G as GLM-4.7
+    participant G as GLM-5
     participant M as MCP Tools
 
     U->>L: @bot メッセージ送信
@@ -180,6 +182,37 @@ sequenceDiagram
         D->>H: エスカレーション通知
     end
 ```
+## 🚀 デプロイ
+
+### 本番環境（Vercel + Upstash Redis）推奨 ⭐
+
+対話型ボットとして本番運用する場合は、Vercelデプロイを推奨します：
+
+📖 **詳細**: [Vercelデプロイガイド](./docs/VERCEL-DEPLOYMENT.md)
+
+**実装済み機能**:
+- ✅ **会話コンテキスト保持**: Upstash Redis統合
+- ✅ **自動ストレージ切り替え**: ローカル=メモリ、本番=Redis
+- ✅ **Vercel API Routes対応**: `api/webhook.ts`
+- ✅ **60秒実行時間**: Vercel Proプラン対応
+
+**メリット**:
+- ✅ 固定URL（変更不要）
+- ✅ 対話型ボット（前の会話を覚えている）
+- ✅ 自動スケーリング
+- ✅ CI/CD統合（GitHubプッシュで自動デプロイ）
+- ✅ グローバルCDN
+
+**5分でデプロイ**:
+```bash
+# 1. Vercel CLIでデプロイ
+vercel --prod
+
+# 2. 環境変数を設定（Vercel Dashboard）
+UPSTASH_REDIS_REST_URL=https://...
+UPSTASH_REDIS_REST_TOKEN=...
+```
+
 
 ## 🚀 セットアップ
 
@@ -198,22 +231,27 @@ npm install
 LARK_APP_ID=your_app_id_here
 LARK_APP_SECRET=your_app_secret_here
 
-# Lark API Domain
-LARK_DOMAIN=https://open.feishu.cn
-
-# GLM-4.7 API Key (Zhipu AI)
+# GLM-5 API Key (Zhipu AI)
 GLM_API_KEY=your_glm_api_key_here
 GLM_API_BASE_URL=https://api.z.ai/api/paas/v4
-GLM_MODEL=glm-4.7
+GLM_MODEL=glm-5
 
 # Server Configuration
 PORT=3000
 WEBHOOK_PATH=/webhook/event
+
+# Logging Configuration (オプション)
+LOG_LEVEL=info                          # debug/info/warn/error
+ENABLE_PERFORMANCE_METRICS=true         # true/false
+
+# MCP Tool Filtering (オプション)
+ENABLED_TOOL_PREFIXES=im.,contact.,drive.,calendar.  # カンマ区切り、空=全て有効
+DISABLED_TOOLS=                         # 明示的に無効化するツール（カンマ区切り）
 ```
 
 ### 3. Larkアプリの設定
 
-1. [Lark Open Platform](https://open.feishu.cn/) でアプリを作成
+1. [Lark Open Platform](https://open.larksuite.com/) でアプリを作成
 2. `APP_ID` と `APP_SECRET` を取得
 3. 必要な権限を付与：
    - `im:message` （メッセージ送信・受信）
@@ -282,7 +320,7 @@ lark-mcp-bot/
 
 ### Larkチャットでボットに話しかける
 
-Larkでボットにメンションして会話します。ボットはGLM-4.7であなたのリクエストを解析し、適切なLark APIを自動的に実行します。
+Larkでボットにメンションして会話します。ボットはGLM-5であなたのリクエストを解析し、適切なLark APIを自動的に実行します。
 
 ```
 ユーザー: @bot こんにちは！
@@ -346,6 +384,39 @@ npm run test:coverage
 3. API Keyを発行
 4. `.env`ファイルに設定
 
+### ログレベルの調整
+
+デバッグ時により詳細なログを確認したい場合：
+
+```env
+LOG_LEVEL=debug
+```
+
+本番環境でログを削減したい場合：
+
+```env
+LOG_LEVEL=warn
+```
+
+### パフォーマンス問題
+
+メッセージ応答が遅い場合、以下を確認：
+
+1. **MCPツールフィルタリング**: 不要なツールを無効化
+   ```env
+   ENABLED_TOOL_PREFIXES=im.message.  # メッセージ関連のみ
+   ```
+
+2. **パフォーマンスメトリクス確認**: ログからボトルネックを特定
+   ```env
+   ENABLE_PERFORMANCE_METRICS=true
+   LOG_LEVEL=info
+   ```
+   
+   ログから`duration_ms`を確認して処理時間を分析
+
+3. **会話履歴の削減**: 必要に応じてコード内の`MAX_CONVERSATIONS`や履歴保持数を調整
+
 ### テストが失敗する場合
 
 ```bash
@@ -362,6 +433,6 @@ MIT License
 
 ## 🙏 参考リンク
 
-- [Lark Open Platform](https://open.feishu.cn/)
-- [Zhipu AI GLM-4.7](https://docs.z.ai/guides/llm/glm-4.7)
+- [Lark Open Platform](https://open.larksuite.com/)
+- [Zhipu AI GLM-5](https://docs.z.ai/guides/llm/glm-5)
 - [Model Context Protocol](https://modelcontextprotocol.io/)
