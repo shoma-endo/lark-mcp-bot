@@ -69,6 +69,32 @@ export class LarkMCPBot {
   }
 
   /**
+   * Detect create/update style tool names.
+   */
+  private isMutationTool(toolName: string): boolean {
+    return /(\.create$|\.patch$|\.update$|\.batchCreate$|\.batchUpdate$)/.test(toolName);
+  }
+
+  /**
+   * Extract URLs from tool result text.
+   */
+  private extractUrls(text: string): string[] {
+    const matches = text.match(/https?:\/\/[^\s"'`<>]+/g) || [];
+    return [...new Set(matches)];
+  }
+
+  /**
+   * Build verification URLs for mutation tools.
+   */
+  private buildMutationResultLinks(toolName: string, resultText: string): string[] {
+    if (!this.isMutationTool(toolName)) {
+      return [];
+    }
+
+    return this.extractUrls(resultText);
+  }
+
+  /**
    * Generate an error reply via LLM instead of hardcoded template messages.
    */
   private async generateLlmErrorReply(userMessage: string, error: Error): Promise<string> {
@@ -525,6 +551,7 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
       if (toolCalls && toolCalls.length > 0) {
         // Execute tool calls
         const toolResults: ConversationMessage[] = [];
+        const mutationResultUrls = new Set<string>();
 
         for (const toolCall of toolCalls) {
           // Handle both standard and custom tool call formats
@@ -543,6 +570,9 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
             name: functionName,
             content: result,
           });
+
+          const mutationLinks = this.buildMutationResultLinks(functionName, result);
+          mutationLinks.forEach((url) => mutationResultUrls.add(url));
 
           // Add assistant message with tool call to history
           history.push({
@@ -607,9 +637,13 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
           throw new LLMError(`Failed to generate follow-up response: ${err.message}`, err);
         }
 
-        const finalResponse = followUpCompletion.choices[0].message.content?.trim();
+        let finalResponse = followUpCompletion.choices[0].message.content?.trim();
         if (!finalResponse) {
           throw new LLMError('Follow-up response is empty');
+        }
+
+        if (mutationResultUrls.size > 0) {
+          finalResponse += '\n\n' + Array.from(mutationResultUrls).join('\n');
         }
 
         // Add final assistant response to history
