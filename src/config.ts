@@ -37,7 +37,7 @@ function getEnvVar(key: string, defaultValue?: string): string {
 // Hardcoded constants
 const LARK_DOMAIN = 'https://open.larksuite.com';
 const GLM_API_BASE_URL = 'https://api.z.ai/api/paas/v4';
-const GLM_MODEL = 'glm-5';
+const GLM_MODEL = 'glm-4.7';
 
 export const config: Config = {
   larkAppId: getEnvVar('LARK_APP_ID'),

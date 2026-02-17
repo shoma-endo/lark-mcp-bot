@@ -94,8 +94,8 @@ describe('Config Module', () => {
 
     const { config, GLM_MODEL } = await import('../src/config.js');
 
-    expect(config.glmModel).toBe('glm-5');
-    expect(GLM_MODEL).toBe('glm-5');
+    expect(config.glmModel).toBe('glm-4.7');
+    expect(GLM_MODEL).toBe('glm-4.7');
   });
 
   it('should throw error for missing LARK_APP_ID', async () => {

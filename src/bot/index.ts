@@ -42,7 +42,7 @@ async function sendTextMessage(client: lark.Client, chatId: string, text: string
 
 /**
  * Lark MCP AI Agent Bot
- * Main bot logic integrating Lark, MCP, and GLM-5
+ * Main bot logic integrating Lark, MCP, and GLM-4.7
  */
 export class LarkMCPBot {
   public larkClient: lark.Client;
@@ -195,7 +195,7 @@ export class LarkMCPBot {
       domain: config.larkDomain,
     });
 
-    // Initialize OpenAI client with GLM-5
+    // Initialize OpenAI client with GLM-4.7
     this.openai = new OpenAI({
       apiKey: config.glmApiKey,
       baseURL: config.glmApiBaseUrl,
@@ -252,7 +252,7 @@ export class LarkMCPBot {
 
   /**
    * Convert MCP tools to GLM function calling format
-   * Cleans up JSON Schema properties not needed by GLM-5
+   * Cleans up JSON Schema properties not needed by GLM-4.7
    */
   private convertMcpToolsToFunctions(): FunctionDefinition[] {
     const allMcpTools = this.mcpTool.getTools() as MCPTool[];
@@ -499,7 +499,7 @@ ${this.functionDefinitions.map(f => `- ${f.function.name}: ${f.function.descript
           // Handle both standard and custom tool call formats
           const fnInfo = 'function' in toolCall ? toolCall.function : undefined;
           const functionName = fnInfo?.name || '';
-          // GLM-5 returns arguments as object, not JSON string
+          // GLM-4.7 returns arguments as object, not JSON string
           const rawArgs = fnInfo?.arguments;
           const functionArgs: Record<string, unknown> =
             typeof rawArgs === 'string' ? JSON.parse(rawArgs) : (rawArgs as unknown as Record<string, unknown>) ?? {};

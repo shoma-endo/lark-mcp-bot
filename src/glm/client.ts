@@ -1,8 +1,8 @@
 import { config } from '../config.js';
 
 /**
- * GLM-5 API Client
- * Interfaces with Zhipu AI's GLM-5 model
+ * GLM-4.7 API Client
+ * Interfaces with Zhipu AI's GLM-4.7 model
  */
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -50,7 +50,7 @@ export class GLMClient {
   }
 
   /**
-   * Send a chat completion request to GLM-5
+   * Send a chat completion request to GLM-4.7
    */
   async chat(
     messages: ChatMessage[],

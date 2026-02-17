@@ -1,13 +1,13 @@
 # Lark MCP AI Agent Bot
 
-Lark（Feishu）のテナント内をMCP（Model Context Protocol）経由で自由自在に操るAIエージェントボットです。GLM-5をLLMとして使用します。
+Lark（Feishu）のテナント内をMCP（Model Context Protocol）経由で自由自在に操るAIエージェントボットです。GLM-4.7をLLMとして使用します。
 
 ## 🎯 特徴
 
 - **Lark API統合**: `@larksuiteoapi/node-sdk`を使用した完全なLark APIアクセス
-- **MCPツール統合**: `@larksuiteoapi/lark-mcp`による100+のLark APIツールをGLM-5のFunction Callingに変換
+- **MCPツール統合**: `@larksuiteoapi/lark-mcp`による100+のLark APIツールをGLM-4.7のFunction Callingに変換
 - **MCPツールフィルタリング**: 必要なツールだけを有効化してパフォーマンス最適化
-- **GLM-5連携**: Zhipu AIのGLM-5モデルによる高精度な応答生成と自動的なツール選択
+- **GLM-4.7連携**: Zhipu AIのGLM-4.7モデルによる高精度な応答生成と自動的なツール選択
 - **会話履歴管理**: チャットごとのコンテキスト保持（最大30メッセージ）
 - **強化されたエラーハンドリング**: カスタムエラークラス、自動リトライ、リトライ可否判定
 - **構造化ロギング**: JSON形式のログ、ログレベル設定、パフォーマンスメトリクス計測
@@ -31,7 +31,7 @@ Lark（Feishu）のテナント内をMCP（Model Context Protocol）経由で自
 graph TB
     subgraph "External Services"
         LarkAPI["Lark Open Platform"]
-        GLM["GLM-5<br/>(Zhipu AI)"]
+        GLM["GLM-4.7<br/>(Zhipu AI)"]
         Redis["Upstash Redis"]
     end
 
@@ -78,7 +78,7 @@ sequenceDiagram
     participant W as Webhook<br/>(Local/Vercel)
     participant B as LarkMCPBot
     participant S as Storage<br/>(Redis/Memory)
-    participant G as GLM-5
+    participant G as GLM-4.7
     participant M as MCP Tools
 
     U->>L: @bot メッセージ送信
@@ -231,10 +231,10 @@ npm install
 LARK_APP_ID=your_app_id_here
 LARK_APP_SECRET=your_app_secret_here
 
-# GLM-5 API Key (Zhipu AI)
+# GLM-4.7 API Key (Zhipu AI)
 GLM_API_KEY=your_glm_api_key_here
 GLM_API_BASE_URL=https://api.z.ai/api/paas/v4
-GLM_MODEL=glm-5
+GLM_MODEL=glm-4.7
 
 # Server Configuration
 PORT=3000
@@ -320,7 +320,7 @@ lark-mcp-bot/
 
 ### Larkチャットでボットに話しかける
 
-Larkでボットにメンションして会話します。ボットはGLM-5であなたのリクエストを解析し、適切なLark APIを自動的に実行します。
+Larkでボットにメンションして会話します。ボットはGLM-4.7であなたのリクエストを解析し、適切なLark APIを自動的に実行します。
 
 ```
 ユーザー: @bot こんにちは！
@@ -434,5 +434,5 @@ MIT License
 ## 🙏 参考リンク
 
 - [Lark Open Platform](https://open.larksuite.com/)
-- [Zhipu AI GLM-5](https://docs.z.ai/guides/llm/glm-5)
+- [Zhipu AI GLM-4.7](https://docs.z.ai/guides/llm/glm-4.7)
 - [Model Context Protocol](https://modelcontextprotocol.io/)

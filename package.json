@@ -1,7 +1,7 @@
 {
   "name": "lark-mcp-bot",
   "version": "1.0.0",
-  "description": "Lark MCP AI Agent Bot - GLM-5 powered bot for Lark automation",
+  "description": "Lark MCP AI Agent Bot - GLM-4.7 powered bot for Lark automation",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
