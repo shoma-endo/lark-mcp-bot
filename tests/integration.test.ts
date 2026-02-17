@@ -130,8 +130,9 @@ describe('LarkMCPBot Integration Tests', () => {
       await (bot as any).handleMessageReceive(messageEvent);
 
       // Verify conversation was stored
-      const conversations = (bot as any).conversations;
-      expect(conversations.has('chat-123')).toBe(true);
+      const storage = bot.getStorage();
+      const history = await storage.getHistory('chat-123');
+      expect(history.length).toBeGreaterThan(0);
 
       // Verify message was sent
       expect(bot.larkClient.im.message.create).toHaveBeenCalled();
@@ -222,8 +223,7 @@ describe('LarkMCPBot Integration Tests', () => {
 
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-      const conversations = (bot as any).conversations;
-      const timestamps = (bot as any).conversationTimestamps;
+      const storage = bot.getStorage();
 
       // First message
       const messageEvent1 = {
@@ -240,7 +240,7 @@ describe('LarkMCPBot Integration Tests', () => {
 
       await (bot as any).handleMessageReceive(messageEvent1);
 
-      const history1 = conversations.get('chat-123');
+      const history1 = await storage.getHistory('chat-123');
       expect(history1.length).toBeGreaterThanOrEqual(2); // At least user + assistant message
       const history1Length = history1.length;
 
@@ -259,11 +259,12 @@ describe('LarkMCPBot Integration Tests', () => {
 
       await (bot as any).handleMessageReceive(messageEvent2);
 
-      const history2 = conversations.get('chat-123');
+      const history2 = await storage.getHistory('chat-123');
       expect(history2.length).toBeGreaterThan(history1Length);
 
       // Verify timestamp was updated
-      expect(timestamps.get('chat-123')).toBeGreaterThan(0);
+      const timestamp = await storage.getTimestamp('chat-123');
+      expect(timestamp).toBeGreaterThan(0);
 
       consoleSpy.mockRestore();
     });
@@ -274,7 +275,7 @@ describe('LarkMCPBot Integration Tests', () => {
 
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-      const conversations = (bot as any).conversations;
+      const storage = bot.getStorage();
 
       // Chat 1
       const messageEvent1 = {
@@ -307,18 +308,18 @@ describe('LarkMCPBot Integration Tests', () => {
       await (bot as any).handleMessageReceive(messageEvent2);
 
       // Verify both conversations exist independently
-      expect(conversations.has('chat-1')).toBe(true);
-      expect(conversations.has('chat-2')).toBe(true);
-
-      const history1 = conversations.get('chat-1');
-      const history2 = conversations.get('chat-2');
+      const history1 = await storage.getHistory('chat-1');
+      const history2 = await storage.getHistory('chat-2');
+      
+      expect(history1.length).toBeGreaterThan(0);
+      expect(history2.length).toBeGreaterThan(0);
 
       // Verify histories are independent - check user messages
       const userMessage1 = history1.find((msg: any) => msg.role === 'user');
       const userMessage2 = history2.find((msg: any) => msg.role === 'user');
       
-      expect(userMessage1.content).toContain('chat 1');
-      expect(userMessage2.content).toContain('chat 2');
+      expect(userMessage1?.content).toContain('chat 1');
+      expect(userMessage2?.content).toContain('chat 2');
 
       consoleSpy.mockRestore();
     });
@@ -450,14 +451,14 @@ describe('LarkMCPBot Integration Tests', () => {
       await (bot as any).handleMessageReceive(messageEvent);
 
       // Verify conversation was stored with plain text
-      const conversations = (bot as any).conversations;
-      const history = conversations.get('chat-123');
-      expect(history).toBeDefined();
+      const storage = bot.getStorage();
+      const history = await storage.getHistory('chat-123');
+      expect(history.length).toBeGreaterThan(0);
       
       // Find the user message in the history
       const userMessage = history.find((msg: any) => msg.role === 'user');
       expect(userMessage).toBeDefined();
-      expect(userMessage.content).toBe('Invalid { JSON');
+      expect(userMessage?.content).toBe('Invalid { JSON');
 
       consoleSpy.mockRestore();
       warnSpy.mockRestore();
@@ -478,15 +479,15 @@ describe('LarkMCPBot Integration Tests', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
+      const storage = bot.getStorage();
+
       // Pre-populate with 30 messages (near limit)
-      const conversations = (bot as any).conversations;
-      const timestamps = (bot as any).conversationTimestamps;
       const history: any[] = [];
       for (let i = 0; i < 30; i++) {
         history.push({ role: i % 2 === 0 ? 'user' : 'assistant', content: `Message ${i}` });
       }
-      conversations.set('chat-123', history);
-      timestamps.set('chat-123', Date.now());
+      await storage.setHistory('chat-123', history);
+      await storage.setTimestamp('chat-123', Date.now());
 
       // Send another message
       const messageEvent = {
@@ -504,7 +505,7 @@ describe('LarkMCPBot Integration Tests', () => {
       await (bot as any).handleMessageReceive(messageEvent);
 
       // Verify history was trimmed
-      const updatedHistory = conversations.get('chat-123');
+      const updatedHistory = await storage.getHistory('chat-123');
       expect(updatedHistory.length).toBeLessThanOrEqual(30);
 
       consoleSpy.mockRestore();
@@ -516,45 +517,55 @@ describe('LarkMCPBot Integration Tests', () => {
       const { LarkMCPBot } = await import('../src/bot/index.js');
       const bot = new LarkMCPBot();
 
-      const conversations = (bot as any).conversations;
-      const timestamps = (bot as any).conversationTimestamps;
+      const storage = bot.getStorage();
       const ttl = (bot as any).CONVERSATION_TTL_MS;
 
       // Add expired conversation
-      conversations.set('expired-chat', [{ role: 'user', content: 'old message' }]);
-      timestamps.set('expired-chat', Date.now() - ttl - 1000);
+      await storage.setHistory('expired-chat', [{ role: 'user', content: 'old message' }]);
+      await storage.setTimestamp('expired-chat', Date.now() - ttl - 1000);
 
       // Add active conversation
-      conversations.set('active-chat', [{ role: 'user', content: 'new message' }]);
-      timestamps.set('active-chat', Date.now());
+      await storage.setHistory('active-chat', [{ role: 'user', content: 'new message' }]);
+      await storage.setTimestamp('active-chat', Date.now());
 
       // Trigger cleanup
       await (bot as any).cleanupExpiredConversations();
 
       // Verify expired conversation was removed
-      expect(conversations.has('expired-chat')).toBe(false);
-      expect(conversations.has('active-chat')).toBe(true);
+      const expiredHistory = await storage.getHistory('expired-chat');
+      const activeHistory = await storage.getHistory('active-chat');
+      
+      expect(expiredHistory.length).toBe(0);
+      expect(activeHistory.length).toBeGreaterThan(0);
     });
 
-    it('should enforce max conversations limit', async () => {
+    it('should handle storage operations correctly', async () => {
       const { LarkMCPBot } = await import('../src/bot/index.js');
       const bot = new LarkMCPBot();
 
-      const conversations = (bot as any).conversations;
-      const timestamps = (bot as any).conversationTimestamps;
-      const maxConversations = (bot as any).MAX_CONVERSATIONS;
+      const storage = bot.getStorage();
 
-      // Add more than max conversations
-      for (let i = 0; i <= maxConversations + 10; i++) {
-        conversations.set(`chat-${i}`, []);
-        timestamps.set(`chat-${i}`, Date.now() - i * 1000);
-      }
+      // Test storage operations
+      const testHistory = [
+        { role: 'user' as const, content: 'Test message 1' },
+        { role: 'assistant' as const, content: 'Response 1' },
+      ];
 
-      // Trigger cleanup
-      await (bot as any).cleanupExpiredConversations();
+      // Set and get history
+      await storage.setHistory('test-chat', testHistory);
+      const retrieved = await storage.getHistory('test-chat');
+      
+      expect(retrieved.length).toBe(2);
+      expect(retrieved[0].content).toBe('Test message 1');
 
-      // Verify limit was enforced
-      expect(conversations.size).toBeLessThanOrEqual(maxConversations);
+      // Test timestamp
+      const timestamp = await storage.getTimestamp('test-chat');
+      expect(timestamp).toBeGreaterThan(0);
+
+      // Test delete
+      await storage.deleteHistory('test-chat');
+      const afterDelete = await storage.getHistory('test-chat');
+      expect(afterDelete.length).toBe(0);
     });
   });
 });

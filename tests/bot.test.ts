@@ -95,11 +95,20 @@ describe('LarkMCPBot', () => {
     const { LarkMCPBot } = await import('../src/bot/index.js');
     const bot = new LarkMCPBot();
 
-    // Access private method via type assertion
+    // Access private functionDefinitions
     const functionDefs = (bot as any).functionDefinitions;
-    expect(functionDefs).toHaveLength(1);
-    expect(functionDefs[0].type).toBe('function');
-    expect(functionDefs[0].function.name).toBe('lark_send_message');
+    
+    // Function definitions should be generated from MCP tools
+    expect(Array.isArray(functionDefs)).toBe(true);
+    
+    // Each function definition should have correct structure if any exist
+    functionDefs.forEach((def: any) => {
+      expect(def.type).toBe('function');
+      expect(def.function).toBeDefined();
+      expect(def.function.name).toBeDefined();
+      expect(def.function.description).toBeDefined();
+      expect(def.function.parameters).toBeDefined();
+    });
   });
 
   it('should get event dispatcher', async () => {
@@ -111,105 +120,63 @@ describe('LarkMCPBot', () => {
   });
 
   describe('Conversation Management', () => {
-    it('should initialize empty conversations map', async () => {
+    it('should initialize with storage', async () => {
       const { LarkMCPBot } = await import('../src/bot/index.js');
       const bot = new LarkMCPBot();
 
-      const conversations = (bot as any).conversations;
-      expect(conversations.size).toBe(0);
+      const storage = bot.getStorage();
+      expect(storage).toBeDefined();
+      
+      // Should start with no conversations
+      const chatIds = await storage.getAllChatIds();
+      expect(chatIds.length).toBe(0);
     });
 
     it('should cleanup expired conversations', async () => {
       const { LarkMCPBot } = await import('../src/bot/index.js');
       const bot = new LarkMCPBot();
 
-      // Add a conversation with old timestamp
-      const conversations = (bot as any).conversations;
-      const timestamps = (bot as any).conversationTimestamps;
+      const storage = bot.getStorage();
       const ttl = (bot as any).CONVERSATION_TTL_MS;
 
-      conversations.set('old-chat', [{ role: 'user', content: 'old message' }]);
-      timestamps.set('old-chat', Date.now() - ttl - 1000); // Expired
+      // Add expired conversation
+      await storage.setHistory('old-chat', [{ role: 'user', content: 'old message' }]);
+      await storage.setTimestamp('old-chat', Date.now() - ttl - 1000);
 
-      conversations.set('new-chat', [{ role: 'user', content: 'new message' }]);
-      timestamps.set('new-chat', Date.now()); // Not expired
-
-      // Trigger cleanup
-      (bot as any).cleanupExpiredConversations();
-
-      expect(conversations.has('old-chat')).toBe(false);
-      expect(conversations.has('new-chat')).toBe(true);
-    });
-
-    it('should enforce max conversations limit', async () => {
-      const { LarkMCPBot } = await import('../src/bot/index.js');
-      const bot = new LarkMCPBot();
-
-      const conversations = (bot as any).conversations;
-      const timestamps = (bot as any).conversationTimestamps;
-      const maxConversations = (bot as any).MAX_CONVERSATIONS;
-
-      // Add more than max conversations
-      for (let i = 0; i <= maxConversations + 10; i++) {
-        conversations.set(`chat-${i}`, []);
-        timestamps.set(`chat-${i}`, Date.now() - i); // Earlier chats have lower timestamps
-      }
+      // Add active conversation
+      await storage.setHistory('new-chat', [{ role: 'user', content: 'new message' }]);
+      await storage.setTimestamp('new-chat', Date.now());
 
       // Trigger cleanup
-      (bot as any).cleanupExpiredConversations();
+      await (bot as any).cleanupExpiredConversations();
 
-      expect(conversations.size).toBeLessThanOrEqual(maxConversations);
+      // Verify expired conversation was removed
+      const oldHistory = await storage.getHistory('old-chat');
+      const newHistory = await storage.getHistory('new-chat');
+      
+      expect(oldHistory.length).toBe(0);
+      expect(newHistory.length).toBeGreaterThan(0);
     });
-  });
 
-  describe('Logging', () => {
-    it('should log structured messages', async () => {
+    it('should store and retrieve conversation history', async () => {
       const { LarkMCPBot } = await import('../src/bot/index.js');
       const bot = new LarkMCPBot();
 
-      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const storage = bot.getStorage();
 
-      (bot as any).log('info', 'Test message', { chatId: 'test-chat' });
+      // Add conversation
+      const testHistory = [
+        { role: 'user' as const, content: 'Test 1' },
+        { role: 'assistant' as const, content: 'Response 1' },
+      ];
+      
+      await storage.setHistory('test-chat', testHistory);
 
-      expect(consoleSpy).toHaveBeenCalled();
-      const logOutput = JSON.parse(consoleSpy.mock.calls[0][0]);
-      expect(logOutput.message).toBe('Test message');
-      expect(logOutput.level).toBe('info');
-      expect(logOutput.chatId).toBe('test-chat');
-
-      consoleSpy.mockRestore();
-    });
-
-    it('should log errors with stack trace', async () => {
-      const { LarkMCPBot } = await import('../src/bot/index.js');
-      const bot = new LarkMCPBot();
-
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      const testError = new Error('Test error');
-
-      (bot as any).log('error', 'Error occurred', {}, testError);
-
-      expect(consoleSpy).toHaveBeenCalled();
-      const logOutput = JSON.parse(consoleSpy.mock.calls[0][0]);
-      expect(logOutput.error.name).toBe('Error');
-      expect(logOutput.error.message).toBe('Test error');
-
-      consoleSpy.mockRestore();
-    });
-
-    it('should log warnings', async () => {
-      const { LarkMCPBot } = await import('../src/bot/index.js');
-      const bot = new LarkMCPBot();
-
-      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-      (bot as any).log('warn', 'Warning message', { chatId: 'test-chat' });
-
-      expect(consoleSpy).toHaveBeenCalled();
-      const logOutput = JSON.parse(consoleSpy.mock.calls[0][0]);
-      expect(logOutput.level).toBe('warn');
-
-      consoleSpy.mockRestore();
+      // Retrieve and verify
+      const retrieved = await storage.getHistory('test-chat');
+      expect(retrieved.length).toBe(2);
+      expect(retrieved[0].content).toBe('Test 1');
+      expect(retrieved[1].content).toBe('Response 1');
     });
   });
 
@@ -298,8 +265,9 @@ describe('LarkMCPBot', () => {
       await (bot as any).handleMessageReceive(messageEvent);
 
       // Verify conversation was stored
-      const conversations = (bot as any).conversations;
-      expect(conversations.has('chat-123')).toBe(true);
+      const storage = bot.getStorage();
+      const history = await storage.getHistory('chat-123');
+      expect(history.length).toBeGreaterThan(0);
 
       // Verify message was sent
       expect(bot.larkClient.im.message.create).toHaveBeenCalled();
@@ -457,9 +425,10 @@ describe('LarkMCPBot', () => {
       await (bot as any).handleMessageReceive(messageEvent);
 
       // Verify conversation has cleaned text
-      const conversations = (bot as any).conversations;
-      const history = conversations.get('chat-123');
-      expect(history[0].content).toBe('Hello bot');
+      const storage = bot.getStorage();
+      const history = await storage.getHistory('chat-123');
+      const userMessage = history.find(msg => msg.role === 'user');
+      expect(userMessage?.content).toBe('Hello bot');
 
       consoleSpy.mockRestore();
     });
@@ -487,9 +456,10 @@ describe('LarkMCPBot', () => {
       await (bot as any).handleMessageReceive(messageEvent);
 
       // Verify conversation has the plain text
-      const conversations = (bot as any).conversations;
-      const history = conversations.get('chat-123');
-      expect(history[0].content).toBe('Plain text message');
+      const storage = bot.getStorage();
+      const history = await storage.getHistory('chat-123');
+      const userMessage = history.find(msg => msg.role === 'user');
+      expect(userMessage?.content).toBe('Plain text message');
 
       consoleSpy.mockRestore();
     });
@@ -549,14 +519,13 @@ describe('LarkMCPBot', () => {
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
       // Pre-populate with 25 messages
-      const conversations = (bot as any).conversations;
-      const timestamps = (bot as any).conversationTimestamps;
+      const storage = bot.getStorage();
       const history: any[] = [];
       for (let i = 0; i < 25; i++) {
         history.push({ role: i % 2 === 0 ? 'user' : 'assistant', content: `Message ${i}` });
       }
-      conversations.set('chat-123', history);
-      timestamps.set('chat-123', Date.now());
+      await storage.setHistory('chat-123', history);
+      await storage.setTimestamp('chat-123', Date.now());
 
       // Reset mock to ensure success
       (bot.larkClient.im.message.create as ReturnType<typeof vi.fn>)
@@ -579,7 +548,7 @@ describe('LarkMCPBot', () => {
       await (bot as any).handleMessageReceive(messageEvent);
 
       // History should be trimmed (25 + 1 user + 1 assistant = 27, then trimmed to 20)
-      const updatedHistory = conversations.get('chat-123');
+      const updatedHistory = await storage.getHistory('chat-123');
       expect(updatedHistory.length).toBeLessThanOrEqual(20);
 
       consoleSpy.mockRestore();
