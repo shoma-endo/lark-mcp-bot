@@ -1,11 +1,10 @@
-export { ConversationStorage } from './interface.js';
-export { MemoryStorage } from './memory.js';
-export { RedisStorage } from './redis.js';
-
+import { logger } from '../utils/logger.js';
 import { MemoryStorage } from './memory.js';
 import { RedisStorage } from './redis.js';
 import type { ConversationStorage } from './interface.js';
-import { logger } from '../utils/logger.js';
+
+export { MemoryStorage, RedisStorage };
+export type { ConversationStorage };
 
 /**
  * Create conversation storage based on environment

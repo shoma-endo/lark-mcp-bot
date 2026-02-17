@@ -185,24 +185,6 @@ export class LarkAPIError extends LarkBotError {
   }
 }
 
-export class RateLimitError extends LarkBotError {
-  constructor(
-    message: string,
-    public readonly retryAfter?: number,
-    cause?: Error
-  ) {
-    super(message, 'RATE_LIMIT_ERROR', true, 429, cause);
-    this.name = 'RateLimitError';
-  }
-
-  toUserMessage(): string {
-    if (this.retryAfter) {
-      return `申し訳ありません。レート制限に達しました。${this.retryAfter}秒後に再試行してください。`;
-    }
-    return '申し訳ありません。レート制限に達しました。しばらく待ってからお試しください。';
-  }
-}
-
 export class ResourcePackageError extends LarkBotError {
   constructor(message: string, cause?: Error) {
     super(message, 'RESOURCE_PACKAGE_ERROR', false, 429, cause);
