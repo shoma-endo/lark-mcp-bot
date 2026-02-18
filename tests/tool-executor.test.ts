@@ -211,6 +211,25 @@ describe('ToolExecutor', () => {
     );
   });
 
+  it('should extract TS-prefixed bitable app_token from base URL', async () => {
+    (larkUtils.larkOapiHandler as any).mockResolvedValueOnce({
+      isError: false,
+      content: [{ type: 'text', text: 'ok' }]
+    });
+
+    await toolExecutor.executeToolCall('bitable.v1.appTable.list', {
+      url: 'https://mjpt22tawf9f.jp.larksuite.com/base/TSfwb28NxaOUDfsLAEijfeqfpnd?table=tblqDQVrR570D79o',
+    });
+
+    expect(larkUtils.larkOapiHandler).toHaveBeenCalledWith(
+      mockLarkClient,
+      expect.objectContaining({
+        app_token: 'TSfwb28NxaOUDfsLAEijfeqfpnd',
+      }),
+      expect.anything()
+    );
+  });
+
   it('should format bitable access errors with actionable guidance', async () => {
     (larkUtils.larkOapiHandler as any).mockResolvedValueOnce({
       isError: true,

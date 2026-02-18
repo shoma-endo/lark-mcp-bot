@@ -331,9 +331,9 @@ export class ToolExecutor {
 
   private extractBitableAppToken(text: string): string | null {
     const basePathMatch = text.match(/\/base\/([a-zA-Z0-9]+)/);
-    if (basePathMatch?.[1]?.startsWith('basc')) return basePathMatch[1];
+    if (basePathMatch?.[1] && /^(basc|TS)[a-zA-Z0-9]{8,}$/.test(basePathMatch[1])) return basePathMatch[1];
 
-    const genericMatch = text.match(/\b(basc[a-zA-Z0-9]{8,})\b/);
+    const genericMatch = text.match(/\b((?:basc|TS)[a-zA-Z0-9]{8,})\b/);
     if (genericMatch?.[1]) return genericMatch[1];
 
     return null;
