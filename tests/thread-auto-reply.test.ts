@@ -299,7 +299,9 @@ describe('MessageProcessor - Thread Auto-Reply', () => {
       expect(mockToolExecutor.executeToolCall).toHaveBeenCalledWith('calendar.v4.freebusy.list', {
         time_min: '2025-02-18T00:00:00+09:00',
         time_max: '2025-02-25T00:00:00+09:00',
-        user_ids: ['me'],
+        user_ids: ['user123'],
+        user_id: 'user123',
+        user_id_type: 'user_id',
       });
     });
 
@@ -344,7 +346,9 @@ describe('MessageProcessor - Thread Auto-Reply', () => {
       expect(mockToolExecutor.executeToolCall).toHaveBeenCalledWith('calendar.v4.freebusy.list', {
         time_max: '2025-02-26T00:00:00+08:00',
         time_min: '2025-02-19T00:00:00+08:00',
-        user_ids: ['me'],
+        user_ids: ['user123'],
+        user_id: 'user123',
+        user_id_type: 'user_id',
       });
     });
   });

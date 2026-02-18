@@ -25,6 +25,11 @@ export class MessageProcessor {
     const userId = sender?.sender_id?.user_id || 'unknown';
     const context: LogContext = { chatId, userId, messageId: message.message_id };
     const metricId = `process_message_${chatId}_${Date.now()}`;
+    const requesterIdentity = {
+      userId: sender?.sender_id?.user_id,
+      openId: sender?.sender_id?.open_id,
+      unionId: sender?.sender_id?.union_id,
+    };
 
     try {
       logger.startMetric(metricId, 'process_message', { chatId, userId });
@@ -70,7 +75,15 @@ export class MessageProcessor {
       let finalResponse: string;
 
       if (toolCalls && toolCalls.length > 0) {
-        finalResponse = await this.handleToolCallsRecursive(chatId, history, responseMessage, toolCalls, systemPrompt, context);
+        finalResponse = await this.handleToolCallsRecursive(
+          chatId,
+          history,
+          responseMessage,
+          toolCalls,
+          systemPrompt,
+          context,
+          requesterIdentity
+        );
       } else {
         finalResponse = responseMessage.content?.trim() || '';
         if (!finalResponse) throw new Error('LLM returned empty response');
@@ -105,7 +118,8 @@ export class MessageProcessor {
     assistantMessage: any,
     toolCalls: any[],
     systemPrompt: string,
-    context: LogContext
+    context: LogContext,
+    requesterIdentity: { userId?: string; openId?: string; unionId?: string }
   ): Promise<string> {
     const mutationResultUrls = new Set<string>();
 
@@ -127,7 +141,11 @@ export class MessageProcessor {
     for (const toolCall of toolCalls) {
       const functionName = toolCall.function.name;
       const rawArgs = toolCall.function.arguments;
-      const functionArgs = this.parseToolArguments(rawArgs, functionName, context);
+      const functionArgs = this.enrichToolArgumentsForRequester(
+        functionName,
+        this.parseToolArguments(rawArgs, functionName, context),
+        requesterIdentity
+      );
 
       const result = await this.toolExecutor.executeToolCall(functionName, functionArgs);
       
@@ -257,6 +275,64 @@ ${toolDocs}
       .replace(/\*\*/g, '')
       .replace(/^#{1,6}\s*/gm, '')
       .trim();
+  }
+
+  private enrichToolArgumentsForRequester(
+    toolName: string,
+    args: Record<string, unknown>,
+    requesterIdentity: { userId?: string; openId?: string; unionId?: string }
+  ): Record<string, unknown> {
+    if (toolName !== 'calendar.v4.freebusy.list') return args;
+
+    const requester = this.resolveRequesterId(requesterIdentity);
+    if (!requester) return args;
+
+    const enriched: Record<string, unknown> = { ...args };
+    const params = (enriched.params && typeof enriched.params === 'object' && !Array.isArray(enriched.params))
+      ? { ...(enriched.params as Record<string, unknown>) }
+      : {};
+    const data = (enriched.data && typeof enriched.data === 'object' && !Array.isArray(enriched.data))
+      ? { ...(enriched.data as Record<string, unknown>) }
+      : {};
+
+    const flatUserIds = Array.isArray(enriched.user_ids)
+      ? (enriched.user_ids as unknown[]).map(v => String(v))
+      : [];
+    if (flatUserIds.length > 0) {
+      const replaced = flatUserIds.map(v => v === 'me' ? requester.id : v);
+      enriched.user_ids = replaced;
+      if (!enriched.user_id && !data.user_id && !enriched.room_id && !data.room_id) {
+        enriched.user_id = replaced[0];
+      }
+    }
+
+    if (enriched.user_id === 'me') {
+      enriched.user_id = requester.id;
+    }
+    if (data.user_id === 'me') {
+      data.user_id = requester.id;
+    }
+
+    const hasAnyTarget = !!(enriched.user_id || enriched.room_id || data.user_id || data.room_id);
+    if (!hasAnyTarget) {
+      enriched.user_id = requester.id;
+    }
+
+    if (!enriched.user_id_type && !params.user_id_type) {
+      enriched.user_id_type = requester.type;
+    }
+
+    if (Object.keys(data).length > 0) enriched.data = data;
+    if (Object.keys(params).length > 0) enriched.params = params;
+    return enriched;
+  }
+
+  private resolveRequesterId(requesterIdentity: { userId?: string; openId?: string; unionId?: string }):
+    { id: string; type: 'user_id' | 'open_id' | 'union_id' } | null {
+    if (requesterIdentity.userId) return { id: requesterIdentity.userId, type: 'user_id' };
+    if (requesterIdentity.openId) return { id: requesterIdentity.openId, type: 'open_id' };
+    if (requesterIdentity.unionId) return { id: requesterIdentity.unionId, type: 'union_id' };
+    return null;
   }
 
   private parseToolArguments(rawArgs: unknown, functionName: string, context: LogContext): Record<string, unknown> {
