@@ -153,6 +153,23 @@ describe('ToolExecutor', () => {
     expect(result).toContain('Handler Error');
   });
 
+  it('should format missing-scope errors clearly', async () => {
+    (larkUtils.larkOapiHandler as any).mockResolvedValueOnce({
+      isError: true,
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          code: 99991672,
+          msg: 'Access denied. One of the following scopes is required: [contact:user.employee_id:readonly]',
+        }),
+      }],
+    });
+
+    const result = await toolExecutor.executeToolCall('test_tool', {});
+    expect(result).toContain('Missing required scope(s)');
+    expect(result).toContain('contact:user.employee_id:readonly');
+  });
+
   it('should detect mutation tools', () => {
     expect(toolExecutor.isMutationTool('test.tool.create')).toBe(true);
     expect(toolExecutor.isMutationTool('test.tool.update')).toBe(true);

@@ -555,6 +555,51 @@ describe('MessageProcessor - Thread Auto-Reply', () => {
       });
     });
 
+    it('should prefer open_id for contact tools and set user_id_type', async () => {
+      process.env.DEFAULT_OPEN_ID = 'ou_env_123';
+      process.env.DEFAULT_USER_ID = 'u_env_999';
+
+      mockLLMService.createCompletion
+        .mockResolvedValueOnce({
+          choices: [{
+            message: {
+              content: '',
+              tool_calls: [{
+                id: 'call-contact-openid',
+                type: 'function',
+                function: {
+                  name: 'contact.v3.user.get',
+                  arguments: JSON.stringify({
+                    user_id: 'me',
+                  }),
+                }
+              }]
+            }
+          }]
+        })
+        .mockResolvedValueOnce({
+          choices: [{ message: { content: 'OK' } }]
+        });
+
+      mockToolExecutor.executeToolCall.mockResolvedValueOnce('{"ok": true}');
+
+      const event: any = {
+        message: {
+          content: JSON.stringify({ text: '自分の連絡先' }),
+          chat_type: 'p2p',
+          message_id: 'msg138'
+        },
+        sender: { sender_id: { user_id: 'sender-user-123', open_id: 'sender-open-123' } }
+      };
+
+      await processor.process(event);
+
+      expect(mockToolExecutor.executeToolCall).toHaveBeenCalledWith('contact.v3.user.get', {
+        user_id: 'ou_env_123',
+        user_id_type: 'open_id',
+      });
+    });
+
     it('should fill missing freebusy time range from planner hints', async () => {
       (mockIntentPlanner.createPlan as ReturnType<typeof vi.fn>).mockReturnValue({
         normalizedUserText: '来週の空き',

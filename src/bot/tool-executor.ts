@@ -94,7 +94,7 @@ export class ToolExecutor {
       const result = await larkOapiHandler(this.larkClient, normalizedParameters, { tool: tool as any }) as MCPToolResult;
 
       if (result.isError) {
-        const errorContent = result.content?.[0]?.text || JSON.stringify(result.content);
+        const errorContent = this.formatToolError(result.content?.[0]?.text || JSON.stringify(result.content));
         throw new ToolExecutionError(`Tool execution failed: ${errorContent}`, toolName);
       }
 
@@ -213,5 +213,31 @@ export class ToolExecutor {
     normalized.data = data;
     if (Object.keys(params).length > 0) normalized.params = params;
     return normalized;
+  }
+
+  private formatToolError(rawText: string): string {
+    if (!rawText) return 'Unknown tool error';
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      return rawText;
+    }
+
+    const message = String(parsed?.msg || parsed?.message || rawText);
+    const code = parsed?.code;
+    const scopeMatch = message.match(/required:\s*\[([^\]]+)\]/i);
+    if (scopeMatch) {
+      const scopes = scopeMatch[1].split(',').map((s: string) => s.trim()).filter(Boolean);
+      if (scopes.length > 0) {
+        return `Missing required scope(s): ${scopes.join(', ')}. Ask a Lark admin to grant these scopes and re-authorize the app.`;
+      }
+    }
+
+    if (code !== undefined) {
+      return `[code: ${code}] ${message}`;
+    }
+    return message;
   }
 }

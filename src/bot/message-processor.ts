@@ -322,7 +322,12 @@ ${plannerHints}
     requesterIdentity: RequesterIdentity,
     intentPlan: IntentPlan
   ): Record<string, unknown> {
-    const enriched = this.applyRequesterIdentity(args, requesterIdentity) as Record<string, unknown>;
+    const preferOpenId = toolName.startsWith('contact.') || toolName === 'calendar.v4.freebusy.list';
+    const enriched = this.applyRequesterIdentity(args, requesterIdentity, undefined, preferOpenId) as Record<string, unknown>;
+
+    if (toolName.startsWith('contact.')) {
+      return this.applyUserIdTypeForContact(enriched, requesterIdentity);
+    }
 
     if (toolName !== 'calendar.v4.freebusy.list') return enriched;
 
@@ -383,8 +388,8 @@ ${plannerHints}
 
   private resolveRequesterId(requesterIdentity: { userId?: string; openId?: string; unionId?: string }):
     { id: string; type: 'user_id' | 'open_id' | 'union_id' } | null {
-    if (requesterIdentity.userId) return { id: requesterIdentity.userId, type: 'user_id' };
     if (requesterIdentity.openId) return { id: requesterIdentity.openId, type: 'open_id' };
+    if (requesterIdentity.userId) return { id: requesterIdentity.userId, type: 'user_id' };
     if (requesterIdentity.unionId) return { id: requesterIdentity.unionId, type: 'union_id' };
     return null;
   }
@@ -414,21 +419,22 @@ ${plannerHints}
   private applyRequesterIdentity(
     value: unknown,
     requesterIdentity: { userId?: string; openId?: string; unionId?: string; email?: string; mobile?: string },
-    keyHint?: string
+    keyHint?: string,
+    preferOpenId = false
   ): unknown {
     if (Array.isArray(value)) {
-      return value.map(item => this.applyRequesterIdentity(item, requesterIdentity, keyHint));
+      return value.map(item => this.applyRequesterIdentity(item, requesterIdentity, keyHint, preferOpenId));
     }
 
     if (value && typeof value === 'object') {
       const obj = value as Record<string, unknown>;
       const next: Record<string, unknown> = {};
       for (const [key, child] of Object.entries(obj)) {
-        const replaced = this.applyRequesterIdentity(child, requesterIdentity, key);
+        const replaced = this.applyRequesterIdentity(child, requesterIdentity, key, preferOpenId);
         if (this.isIdentityKey(key) && this.isIdentityPlaceholderValue(replaced)) {
-          next[key] = this.getIdentityValueForKey(key, requesterIdentity);
+          next[key] = this.getIdentityValueForKey(key, requesterIdentity, preferOpenId);
         } else if (this.isIdentityArrayKey(key) && Array.isArray(replaced) && replaced.length === 0) {
-          next[key] = this.getIdentityValueForKey(key, requesterIdentity);
+          next[key] = this.getIdentityValueForKey(key, requesterIdentity, preferOpenId);
         } else {
           next[key] = replaced;
         }
@@ -439,7 +445,7 @@ ${plannerHints}
     if (typeof value !== 'string') return value;
     const scalar = this.sanitizeLooseScalar(value);
     if (!this.isIdentityPlaceholder(scalar)) return scalar;
-    return this.getIdentityValueForKey(keyHint, requesterIdentity);
+    return this.getIdentityValueForKey(keyHint, requesterIdentity, preferOpenId);
   }
 
   private isIdentityPlaceholder(value: string): boolean {
@@ -466,10 +472,13 @@ ${plannerHints}
 
   private getIdentityValueForKey(
     keyHint: string | undefined,
-    requesterIdentity: { userId?: string; openId?: string; unionId?: string; email?: string; mobile?: string }
+    requesterIdentity: { userId?: string; openId?: string; unionId?: string; email?: string; mobile?: string },
+    preferOpenId = false
   ): string | string[] {
     const key = (keyHint || '').toLowerCase();
-    const primary = requesterIdentity.userId || requesterIdentity.openId || requesterIdentity.unionId || '';
+    const primary = preferOpenId
+      ? (requesterIdentity.openId || requesterIdentity.userId || requesterIdentity.unionId || '')
+      : (requesterIdentity.userId || requesterIdentity.openId || requesterIdentity.unionId || '');
 
     if (key === 'open_id' || key === 'open_ids') {
       const value = requesterIdentity.openId || primary;
@@ -492,6 +501,32 @@ ${plannerHints}
       return primary ? [primary] : [];
     }
     return primary;
+  }
+
+  private applyUserIdTypeForContact(
+    args: Record<string, unknown>,
+    requesterIdentity: RequesterIdentity
+  ): Record<string, unknown> {
+    const next: Record<string, unknown> = { ...args };
+    const params = (next.params && typeof next.params === 'object' && !Array.isArray(next.params))
+      ? { ...(next.params as Record<string, unknown>) }
+      : {};
+    const data = (next.data && typeof next.data === 'object' && !Array.isArray(next.data))
+      ? { ...(next.data as Record<string, unknown>) }
+      : {};
+
+    if (requesterIdentity.openId) {
+      if (!next.user_id && !data.user_id) {
+        next.user_id = requesterIdentity.openId;
+      }
+      if (!next.user_id_type && !params.user_id_type) {
+        next.user_id_type = 'open_id';
+      }
+    }
+
+    if (Object.keys(data).length > 0) next.data = data;
+    if (Object.keys(params).length > 0) next.params = params;
+    return next;
   }
 
   private parseToolArguments(rawArgs: unknown, functionName: string, context: LogContext): Record<string, unknown> {
