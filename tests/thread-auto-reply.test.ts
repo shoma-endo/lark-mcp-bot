@@ -13,6 +13,7 @@ const mockToolExecutor: any = {
   convertMcpToolsToFunctions: vi.fn().mockReturnValue([]),
   executeToolCall: vi.fn(),
   buildMutationResultLinks: vi.fn().mockReturnValue([]),
+  isMutationTool: vi.fn().mockReturnValue(false),
 };
 
 const mockStorage: any = {
@@ -26,7 +27,17 @@ describe('MessageProcessor - Thread Auto-Reply', () => {
   let mockIntentPlanner: IntentPlannerLike;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
+    mockLLMService.createCompletion.mockResolvedValue({
+      choices: [{ message: { content: 'Bot response' } }]
+    });
+    mockToolExecutor.convertMcpToolsToFunctions.mockReturnValue([]);
+    mockToolExecutor.executeToolCall.mockReset();
+    mockToolExecutor.buildMutationResultLinks.mockReturnValue([]);
+    mockToolExecutor.isMutationTool.mockReturnValue(false);
+    mockStorage.getHistory.mockResolvedValue([]);
+    mockStorage.setTimestamp.mockResolvedValue(undefined);
+    mockStorage.setHistory.mockResolvedValue(undefined);
     mockIntentPlanner = {
       createPlan: vi.fn((userText: string) => ({
         normalizedUserText: userText,
@@ -651,6 +662,84 @@ describe('MessageProcessor - Thread Auto-Reply', () => {
         time_min: '2025-02-24T00:00:00+09:00',
         time_max: '2025-03-03T00:00:00+09:00',
       });
+    });
+
+    it('should summarize long history before sending context to llm', async () => {
+      const longHistory = Array.from({ length: 28 }).map((_, i) => ({
+        role: i % 2 === 0 ? 'user' as const : 'assistant' as const,
+        content: `message-${i}`,
+      }));
+      mockStorage.getHistory.mockResolvedValueOnce(longHistory);
+
+      mockLLMService.createCompletion
+        .mockResolvedValueOnce({
+          choices: [{ message: { content: '要約: ここまでの会話' } }]
+        })
+        .mockResolvedValueOnce({
+          choices: [{ message: { content: 'Bot response' } }]
+        });
+
+      const event: any = {
+        message: {
+          content: JSON.stringify({ text: '次の質問' }),
+          chat_type: 'p2p',
+          message_id: 'msg139'
+        },
+        sender: { sender_id: { user_id: 'user123' } }
+      };
+
+      await processor.process(event);
+
+      const savedHistory = mockStorage.setHistory.mock.calls[0][1];
+      expect(savedHistory[0].role).toBe('system');
+      expect(savedHistory[0].content).toContain('会話要約:');
+      expect(mockLLMService.createCompletion).toHaveBeenCalledTimes(2);
+    });
+
+    it('should run post-check for mutation tools when read tool exists', async () => {
+      mockToolExecutor.isMutationTool.mockReturnValue(true);
+      mockToolExecutor.convertMcpToolsToFunctions.mockReturnValue([
+        { function: { name: 'test.tool.create', description: '', parameters: {} } },
+        { function: { name: 'test.tool.get', description: '', parameters: {} } },
+      ]);
+
+      mockLLMService.createCompletion
+        .mockResolvedValueOnce({
+          choices: [{
+            message: {
+              content: '',
+              tool_calls: [{
+                id: 'call-postcheck',
+                type: 'function',
+                function: {
+                  name: 'test.tool.create',
+                  arguments: JSON.stringify({ id: '123' })
+                }
+              }]
+            }
+          }]
+        })
+        .mockResolvedValueOnce({
+          choices: [{ message: { content: 'Done' } }]
+        });
+
+      mockToolExecutor.executeToolCall
+        .mockResolvedValueOnce('{"id":"123"}')
+        .mockResolvedValueOnce('{"id":"123","status":"ok"}');
+
+      const event: any = {
+        message: {
+          content: JSON.stringify({ text: '作成して' }),
+          chat_type: 'p2p',
+          message_id: 'msg140'
+        },
+        sender: { sender_id: { user_id: 'user123' } }
+      };
+
+      await processor.process(event);
+
+      expect(mockToolExecutor.executeToolCall).toHaveBeenNthCalledWith(1, 'test.tool.create', { id: '123' });
+      expect(mockToolExecutor.executeToolCall).toHaveBeenNthCalledWith(2, 'test.tool.get', { id: '123' });
     });
   });
 });

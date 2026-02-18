@@ -16,6 +16,9 @@ import {
 } from './intent-planner.js';
 
 export class MessageProcessor {
+  private readonly SUMMARY_TRIGGER_MESSAGES = 24;
+  private readonly SUMMARY_KEEP_RECENT = 12;
+
   constructor(
     private llmService: LLMService,
     private toolExecutor: ToolExecutor,
@@ -54,8 +57,9 @@ export class MessageProcessor {
         return '';
       }
 
-      const history = await this.storage.getHistory(chatId);
+      let history = await this.storage.getHistory(chatId);
       await this.storage.setTimestamp(chatId, Date.now());
+      history = await this.maybeSummarizeHistory(history, context);
 
       const cleanText = this.removeMentions(messageText);
       const intentPlan = this.intentPlanner.createPlan(cleanText);
@@ -129,6 +133,7 @@ export class MessageProcessor {
   ): Promise<string> {
     const mutationResultUrls = new Set<string>();
     const functions = this.toolExecutor.convertMcpToolsToFunctions();
+    const availableToolNames = new Set(this.toolExecutor.convertMcpToolsToFunctions().map(f => f.function.name));
     const executeToolCalls = async (calls: any[]): Promise<void> => {
       for (const toolCall of calls) {
         const functionName = toolCall.function.name;
@@ -140,7 +145,11 @@ export class MessageProcessor {
           intentPlan
         );
 
-        const result = await this.toolExecutor.executeToolCall(functionName, functionArgs);
+        let result = await this.toolExecutor.executeToolCall(functionName, functionArgs);
+        const postCheck = await this.tryPostCheck(functionName, functionArgs, result, availableToolNames, context);
+        if (postCheck) {
+          result = `${result}\n\n${postCheck}`;
+        }
         history.push({
           role: 'tool',
           tool_call_id: toolCall.id,
@@ -222,6 +231,108 @@ export class MessageProcessor {
     history.push({ role: 'assistant', content: finalResponse });
 
     return finalResponse;
+  }
+
+  private async maybeSummarizeHistory(
+    history: ConversationMessage[],
+    context: LogContext
+  ): Promise<ConversationMessage[]> {
+    if (history.length <= this.SUMMARY_TRIGGER_MESSAGES) return history;
+
+    const existingSummary = history.find(
+      msg => msg.role === 'system' && msg.content.startsWith('会話要約:')
+    );
+    const nonSummaryHistory = history.filter(
+      msg => !(msg.role === 'system' && msg.content.startsWith('会話要約:'))
+    );
+    const recent = nonSummaryHistory.slice(-this.SUMMARY_KEEP_RECENT);
+    const toSummarize = nonSummaryHistory.slice(0, Math.max(0, nonSummaryHistory.length - this.SUMMARY_KEEP_RECENT));
+    if (toSummarize.length === 0) return history;
+
+    try {
+      const summaryPrompt: ConversationMessage[] = [
+        {
+          role: 'system',
+          content: '以下の会話履歴を、目的・合意事項・未完了タスク・重要なID/URLに分けて日本語で簡潔に要約してください。1000文字以内。'
+        },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            previous_summary: existingSummary?.content || '',
+            messages: toSummarize,
+          }),
+        },
+      ];
+      const completion = await this.llmService.createCompletion(summaryPrompt);
+      const summaryText = completion.choices[0]?.message?.content?.trim();
+      if (!summaryText) return history;
+
+      return [
+        { role: 'system', content: `会話要約:\n${summaryText}` },
+        ...recent,
+      ];
+    } catch (error) {
+      logger.warn('Failed to summarize history', context, error as Error);
+      return history;
+    }
+  }
+
+  private async tryPostCheck(
+    functionName: string,
+    functionArgs: Record<string, unknown>,
+    toolResult: string,
+    availableToolNames: Set<string>,
+    context: LogContext
+  ): Promise<string | null> {
+    if (!this.toolExecutor.isMutationTool(functionName)) return null;
+
+    const postCheckTool = this.findPostCheckTool(functionName, availableToolNames);
+    if (!postCheckTool) return null;
+
+    const postCheckArgs = this.buildPostCheckArgs(functionArgs, toolResult);
+    if (!postCheckArgs) return null;
+
+    const postCheckResult = await this.toolExecutor.executeToolCall(postCheckTool, postCheckArgs);
+    if (postCheckResult.startsWith('Error:') || postCheckResult.startsWith('Error executing tool:')) {
+      logger.warn('Post-check failed', context, undefined, { mutationTool: functionName, postCheckTool });
+      return null;
+    }
+    return `Post-check (${postCheckTool}): ${postCheckResult}`;
+  }
+
+  private findPostCheckTool(toolName: string, availableToolNames: Set<string>): string | null {
+    const base = toolName.replace(/\.(create|patch|update|batchCreate|batchUpdate)$/, '');
+    const candidates = [`${base}.get`, `${base}.list`, `${base}.search`];
+    return candidates.find(name => availableToolNames.has(name)) || null;
+  }
+
+  private buildPostCheckArgs(
+    functionArgs: Record<string, unknown>,
+    toolResult: string
+  ): Record<string, unknown> | null {
+    const seedKeys = [
+      'id', 'user_id', 'chat_id', 'calendar_id', 'event_id', 'task_id',
+      'record_id', 'table_id', 'app_token', 'document_id', 'document_token',
+      'spreadsheet_token', 'sheet_id', 'node_id', 'node_token', 'file_token',
+      'token', 'obj_token',
+    ];
+    const args: Record<string, unknown> = {};
+    for (const key of seedKeys) {
+      if (functionArgs[key] !== undefined) args[key] = functionArgs[key];
+    }
+
+    try {
+      const parsed = JSON.parse(toolResult) as Record<string, unknown>;
+      for (const key of seedKeys) {
+        if (args[key] === undefined && parsed[key] !== undefined) {
+          args[key] = parsed[key];
+        }
+      }
+    } catch {
+      // ignore non-JSON result
+    }
+
+    return Object.keys(args).length > 0 ? args : null;
   }
 
   private parseMessageContent(content?: string): { text: string; hasMention: boolean } {
