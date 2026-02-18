@@ -274,6 +274,95 @@ describe('MessageProcessor - Thread Auto-Reply', () => {
       expect(mockToolExecutor.executeToolCall).toHaveBeenCalledWith('test.tool.create', { name: 'test' });
     });
 
+    it('should retry when follow-up response is empty after tool execution', async () => {
+      mockLLMService.createCompletion
+        .mockResolvedValueOnce({
+          choices: [{
+            message: {
+              content: '',
+              tool_calls: [{
+                id: 'call-retry',
+                type: 'function',
+                function: {
+                  name: 'test.tool.create',
+                  arguments: JSON.stringify({ name: 'test' })
+                }
+              }]
+            }
+          }]
+        })
+        .mockResolvedValueOnce({
+          choices: [{
+            message: {
+              content: '   '
+            }
+          }]
+        })
+        .mockResolvedValueOnce({
+          choices: [{
+            message: {
+              content: 'Recovered response'
+            }
+          }]
+        });
+
+      mockToolExecutor.executeToolCall.mockResolvedValueOnce('{"id":"123"}');
+
+      const event: any = {
+        message: {
+          content: JSON.stringify({ text: 'Do something' }),
+          chat_type: 'p2p',
+          message_id: 'msg-retry'
+        },
+        sender: { sender_id: { user_id: 'user123' } }
+      };
+
+      const result = await processor.process(event);
+      expect(result).toContain('Recovered response');
+      expect(mockLLMService.createCompletion).toHaveBeenCalledTimes(3);
+    });
+
+    it('should return fallback message when follow-up response stays empty', async () => {
+      mockLLMService.createCompletion
+        .mockResolvedValueOnce({
+          choices: [{
+            message: {
+              content: '',
+              tool_calls: [{
+                id: 'call-fallback',
+                type: 'function',
+                function: {
+                  name: 'test.tool.create',
+                  arguments: JSON.stringify({ name: 'test' })
+                }
+              }]
+            }
+          }]
+        })
+        .mockResolvedValue({
+          choices: [{
+            message: {
+              content: ''
+            }
+          }]
+        });
+
+      mockToolExecutor.executeToolCall.mockResolvedValueOnce('{"id":"123"}');
+
+      const event: any = {
+        message: {
+          content: JSON.stringify({ text: 'Do something' }),
+          chat_type: 'p2p',
+          message_id: 'msg-fallback'
+        },
+        sender: { sender_id: { user_id: 'user123' } }
+      };
+
+      const result = await processor.process(event);
+      expect(result).toContain('最終メッセージの生成に失敗しました');
+      expect(mockLLMService.createCompletion).toHaveBeenCalledTimes(4);
+    });
+
     it('should normalize malformed tool argument string into object', async () => {
       mockLLMService.createCompletion
         .mockResolvedValueOnce({

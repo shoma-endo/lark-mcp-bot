@@ -128,6 +128,27 @@ export class MessageProcessor {
     intentPlan: IntentPlan
   ): Promise<string> {
     const mutationResultUrls = new Set<string>();
+    const executeToolCalls = async (calls: any[]): Promise<void> => {
+      for (const toolCall of calls) {
+        const functionName = toolCall.function.name;
+        const rawArgs = toolCall.function.arguments;
+        const functionArgs = this.enrichToolArgumentsForRequester(
+          functionName,
+          this.parseToolArguments(rawArgs, functionName, context),
+          requesterIdentity,
+          intentPlan
+        );
+
+        const result = await this.toolExecutor.executeToolCall(functionName, functionArgs);
+        history.push({
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          name: functionName,
+          content: result,
+        });
+        this.toolExecutor.buildMutationResultLinks(functionName, result).forEach(url => mutationResultUrls.add(url));
+      }
+    };
 
     // Add original assistant message with tool calls to history
     history.push({
@@ -144,42 +165,49 @@ export class MessageProcessor {
     });
 
     // Execute all tool calls in this turn
-    for (const toolCall of toolCalls) {
-      const functionName = toolCall.function.name;
-      const rawArgs = toolCall.function.arguments;
-      const functionArgs = this.enrichToolArgumentsForRequester(
-        functionName,
-        this.parseToolArguments(rawArgs, functionName, context),
-        requesterIdentity,
-        intentPlan
-      );
+    await executeToolCalls(toolCalls);
 
-      const result = await this.toolExecutor.executeToolCall(functionName, functionArgs);
-      
-      history.push({
-        role: 'tool',
-        tool_call_id: toolCall.id,
-        name: functionName,
-        content: result,
-      });
+    let finalResponse = '';
+    const maxFollowUpAttempts = 3;
+    for (let attempt = 1; attempt <= maxFollowUpAttempts; attempt++) {
+      const followUpMessages = [
+        { role: 'system', content: systemPrompt },
+        ...history.slice(-20),
+      ];
 
-      this.toolExecutor.buildMutationResultLinks(functionName, result).forEach(url => mutationResultUrls.add(url));
+      const followUpCompletion = await this.llmService.createCompletion(followUpMessages as ConversationMessage[]);
+      const followUpMessage = followUpCompletion.choices[0]?.message;
+      if (!followUpMessage) {
+        logger.warn('LLM returned no follow-up response choices', context, undefined, { attempt });
+        continue;
+      }
+
+      const followUpToolCalls = followUpMessage.tool_calls;
+      if (followUpToolCalls && followUpToolCalls.length > 0) {
+        history.push({
+          role: 'assistant',
+          content: followUpMessage.content || '',
+          tool_calls: followUpToolCalls.map(tc => ({
+            id: tc.id,
+            type: 'function',
+            function: {
+              name: tc.function.name,
+              arguments: tc.function.arguments,
+            },
+          })),
+        });
+        await executeToolCalls(followUpToolCalls);
+        continue;
+      }
+
+      finalResponse = followUpMessage.content?.trim() || '';
+      if (finalResponse) break;
+      logger.warn('LLM returned empty follow-up response', context, undefined, { attempt });
     }
 
-    // Get follow-up from LLM
-    const followUpMessages = [
-      { role: 'system', content: systemPrompt },
-      ...history.slice(-20),
-    ];
-
-    const followUpCompletion = await this.llmService.createCompletion(followUpMessages as ConversationMessage[]);
-    const followUpMessage = followUpCompletion.choices[0]?.message;
-    if (!followUpMessage) {
-      throw new Error('LLM returned no follow-up response choices');
+    if (!finalResponse) {
+      finalResponse = '処理は完了しましたが、最終メッセージの生成に失敗しました。必要であればもう一度お試しください。';
     }
-    let finalResponse = followUpMessage.content?.trim() || '';
-    
-    if (!finalResponse) throw new Error('LLM returned empty follow-up response');
 
     // Append mutation links if any
     if (mutationResultUrls.size > 0) {
