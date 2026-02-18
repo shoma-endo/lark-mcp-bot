@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MessageProcessor } from '../src/bot/message-processor.js';
 
 // Mock dependencies
@@ -26,6 +26,14 @@ describe('MessageProcessor - Thread Auto-Reply', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     processor = new MessageProcessor(mockLLMService, mockToolExecutor, mockStorage);
+  });
+
+  afterEach(() => {
+    delete process.env.DEFAULT_USER_ID;
+    delete process.env.DEFAULT_OPEN_ID;
+    delete process.env.DEFAULT_UNION_ID;
+    delete process.env.DEFAULT_USER_EMAIL;
+    delete process.env.DEFAULT_USER_MOBILE;
   });
 
   it('should process private chat without mention', async () => {
@@ -349,6 +357,104 @@ describe('MessageProcessor - Thread Auto-Reply', () => {
         user_ids: ['user123'],
         user_id: 'user123',
         user_id_type: 'user_id',
+      });
+    });
+
+    it('should prefer fixed user identity from environment variables', async () => {
+      process.env.DEFAULT_USER_ID = 'env-user-999';
+
+      mockLLMService.createCompletion
+        .mockResolvedValueOnce({
+          choices: [{
+            message: {
+              content: '',
+              tool_calls: [{
+                id: 'call-env-fixed',
+                type: 'function',
+                function: {
+                  name: 'calendar.v4.freebusy.list',
+                  arguments: JSON.stringify({
+                    time_min: '2025-02-20T00:00:00+09:00',
+                    time_max: '2025-02-21T00:00:00+09:00',
+                    user_ids: ['me'],
+                  }),
+                }
+              }]
+            }
+          }]
+        })
+        .mockResolvedValueOnce({
+          choices: [{ message: { content: 'OK' } }]
+        });
+
+      mockToolExecutor.executeToolCall.mockResolvedValueOnce('{"ok": true}');
+
+      const event: any = {
+        message: {
+          content: JSON.stringify({ text: '予定を確認して' }),
+          chat_type: 'p2p',
+          message_id: 'msg135'
+        },
+        sender: { sender_id: { user_id: 'sender-user-123' } }
+      };
+
+      await processor.process(event);
+
+      expect(mockToolExecutor.executeToolCall).toHaveBeenCalledWith('calendar.v4.freebusy.list', {
+        time_min: '2025-02-20T00:00:00+09:00',
+        time_max: '2025-02-21T00:00:00+09:00',
+        user_ids: ['env-user-999'],
+        user_id: 'env-user-999',
+        user_id_type: 'user_id',
+      });
+    });
+
+    it('should auto-resolve me placeholders for non-calendar tools too', async () => {
+      process.env.DEFAULT_USER_ID = 'env-user-001';
+      process.env.DEFAULT_USER_EMAIL = 'user@example.com';
+      process.env.DEFAULT_USER_MOBILE = '+819000000000';
+
+      mockLLMService.createCompletion
+        .mockResolvedValueOnce({
+          choices: [{
+            message: {
+              content: '',
+              tool_calls: [{
+                id: 'call-generic-identity',
+                type: 'function',
+                function: {
+                  name: 'contact.v3.user.get',
+                  arguments: JSON.stringify({
+                    user_id: 'me',
+                    email: 'me',
+                    mobile: 'me',
+                  }),
+                }
+              }]
+            }
+          }]
+        })
+        .mockResolvedValueOnce({
+          choices: [{ message: { content: 'OK' } }]
+        });
+
+      mockToolExecutor.executeToolCall.mockResolvedValueOnce('{"ok": true}');
+
+      const event: any = {
+        message: {
+          content: JSON.stringify({ text: 'ユーザー情報' }),
+          chat_type: 'p2p',
+          message_id: 'msg136'
+        },
+        sender: { sender_id: { user_id: 'sender-user-123' } }
+      };
+
+      await processor.process(event);
+
+      expect(mockToolExecutor.executeToolCall).toHaveBeenCalledWith('contact.v3.user.get', {
+        user_id: 'env-user-001',
+        email: 'user@example.com',
+        mobile: '+819000000000',
       });
     });
   });

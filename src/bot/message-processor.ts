@@ -25,11 +25,7 @@ export class MessageProcessor {
     const userId = sender?.sender_id?.user_id || 'unknown';
     const context: LogContext = { chatId, userId, messageId: message.message_id };
     const metricId = `process_message_${chatId}_${Date.now()}`;
-    const requesterIdentity = {
-      userId: sender?.sender_id?.user_id,
-      openId: sender?.sender_id?.open_id,
-      unionId: sender?.sender_id?.union_id,
-    };
+    const requesterIdentity = this.resolveRequesterIdentity(sender?.sender_id);
 
     try {
       logger.startMetric(metricId, 'process_message', { chatId, userId });
@@ -119,7 +115,13 @@ export class MessageProcessor {
     toolCalls: any[],
     systemPrompt: string,
     context: LogContext,
-    requesterIdentity: { userId?: string; openId?: string; unionId?: string }
+    requesterIdentity: {
+      userId?: string;
+      openId?: string;
+      unionId?: string;
+      email?: string;
+      mobile?: string;
+    }
   ): Promise<string> {
     const mutationResultUrls = new Set<string>();
 
@@ -280,14 +282,21 @@ ${toolDocs}
   private enrichToolArgumentsForRequester(
     toolName: string,
     args: Record<string, unknown>,
-    requesterIdentity: { userId?: string; openId?: string; unionId?: string }
+    requesterIdentity: {
+      userId?: string;
+      openId?: string;
+      unionId?: string;
+      email?: string;
+      mobile?: string;
+    }
   ): Record<string, unknown> {
-    if (toolName !== 'calendar.v4.freebusy.list') return args;
+    const enriched = this.applyRequesterIdentity(args, requesterIdentity) as Record<string, unknown>;
+
+    if (toolName !== 'calendar.v4.freebusy.list') return enriched;
 
     const requester = this.resolveRequesterId(requesterIdentity);
-    if (!requester) return args;
+    if (!requester) return enriched;
 
-    const enriched: Record<string, unknown> = { ...args };
     const params = (enriched.params && typeof enriched.params === 'object' && !Array.isArray(enriched.params))
       ? { ...(enriched.params as Record<string, unknown>) }
       : {};
@@ -318,7 +327,11 @@ ${toolDocs}
       enriched.user_id = requester.id;
     }
 
-    if (!enriched.user_id_type && !params.user_id_type) {
+    if (
+      !enriched.user_id_type &&
+      !params.user_id_type &&
+      (!enriched.room_id && !data.room_id)
+    ) {
       enriched.user_id_type = requester.type;
     }
 
@@ -333,6 +346,117 @@ ${toolDocs}
     if (requesterIdentity.openId) return { id: requesterIdentity.openId, type: 'open_id' };
     if (requesterIdentity.unionId) return { id: requesterIdentity.unionId, type: 'union_id' };
     return null;
+  }
+
+  private resolveRequesterIdentity(senderId?: {
+    user_id?: string;
+    open_id?: string;
+    union_id?: string;
+  }): {
+    userId?: string;
+    openId?: string;
+    unionId?: string;
+    email?: string;
+    mobile?: string;
+  } {
+    const getEnv = (...keys: string[]): string | undefined => {
+      for (const key of keys) {
+        const value = process.env[key]?.trim();
+        if (value) return value;
+      }
+      return undefined;
+    };
+
+    return {
+      userId: getEnv('DEFAULT_USER_ID', 'LARK_DEFAULT_USER_ID') || senderId?.user_id,
+      openId: getEnv('DEFAULT_OPEN_ID', 'LARK_DEFAULT_OPEN_ID') || senderId?.open_id,
+      unionId: getEnv('DEFAULT_UNION_ID', 'LARK_DEFAULT_UNION_ID') || senderId?.union_id,
+      email: getEnv('DEFAULT_USER_EMAIL', 'LARK_DEFAULT_USER_EMAIL'),
+      mobile: getEnv('DEFAULT_USER_MOBILE', 'LARK_DEFAULT_USER_MOBILE'),
+    };
+  }
+
+  private applyRequesterIdentity(
+    value: unknown,
+    requesterIdentity: { userId?: string; openId?: string; unionId?: string; email?: string; mobile?: string },
+    keyHint?: string
+  ): unknown {
+    if (Array.isArray(value)) {
+      return value.map(item => this.applyRequesterIdentity(item, requesterIdentity, keyHint));
+    }
+
+    if (value && typeof value === 'object') {
+      const obj = value as Record<string, unknown>;
+      const next: Record<string, unknown> = {};
+      for (const [key, child] of Object.entries(obj)) {
+        const replaced = this.applyRequesterIdentity(child, requesterIdentity, key);
+        if (this.isIdentityKey(key) && this.isIdentityPlaceholderValue(replaced)) {
+          next[key] = this.getIdentityValueForKey(key, requesterIdentity);
+        } else if (this.isIdentityArrayKey(key) && Array.isArray(replaced) && replaced.length === 0) {
+          next[key] = this.getIdentityValueForKey(key, requesterIdentity);
+        } else {
+          next[key] = replaced;
+        }
+      }
+      return next;
+    }
+
+    if (typeof value !== 'string') return value;
+    const scalar = this.sanitizeLooseScalar(value);
+    if (!this.isIdentityPlaceholder(scalar)) return scalar;
+    return this.getIdentityValueForKey(keyHint, requesterIdentity);
+  }
+
+  private isIdentityPlaceholder(value: string): boolean {
+    const normalized = value.trim().toLowerCase();
+    return normalized === 'me' || normalized === 'self' || normalized === 'current_user' || normalized === '@me';
+  }
+
+  private isIdentityPlaceholderValue(value: unknown): boolean {
+    return typeof value === 'string' && this.isIdentityPlaceholder(this.sanitizeLooseScalar(value));
+  }
+
+  private isIdentityArrayKey(key: string): boolean {
+    const normalized = key.toLowerCase();
+    return normalized.endsWith('_ids') || ['user_ids', 'open_ids', 'union_ids', 'emails', 'mobiles', 'phones'].includes(normalized);
+  }
+
+  private isIdentityKey(key: string): boolean {
+    const normalized = key.toLowerCase();
+    return [
+      'user_id', 'open_id', 'union_id', 'email', 'mobile', 'phone',
+      'user_ids', 'open_ids', 'union_ids', 'emails', 'mobiles', 'phones',
+    ].includes(normalized) || normalized.endsWith('_user_id');
+  }
+
+  private getIdentityValueForKey(
+    keyHint: string | undefined,
+    requesterIdentity: { userId?: string; openId?: string; unionId?: string; email?: string; mobile?: string }
+  ): string | string[] {
+    const key = (keyHint || '').toLowerCase();
+    const primary = requesterIdentity.userId || requesterIdentity.openId || requesterIdentity.unionId || '';
+
+    if (key === 'open_id' || key === 'open_ids') {
+      const value = requesterIdentity.openId || primary;
+      return key.endsWith('s') ? (value ? [value] : []) : value;
+    }
+    if (key === 'union_id' || key === 'union_ids') {
+      const value = requesterIdentity.unionId || primary;
+      return key.endsWith('s') ? (value ? [value] : []) : value;
+    }
+    if (key === 'email' || key === 'emails') {
+      const value = requesterIdentity.email || '';
+      return key.endsWith('s') ? (value ? [value] : []) : value;
+    }
+    if (key === 'mobile' || key === 'mobiles' || key === 'phone' || key === 'phones') {
+      const value = requesterIdentity.mobile || '';
+      return key.endsWith('s') ? (value ? [value] : []) : value;
+    }
+
+    if (key.endsWith('_ids')) {
+      return primary ? [primary] : [];
+    }
+    return primary;
   }
 
   private parseToolArguments(rawArgs: unknown, functionName: string, context: LogContext): Record<string, unknown> {
