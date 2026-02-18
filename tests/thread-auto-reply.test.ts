@@ -58,6 +58,44 @@ describe('MessageProcessor - Thread Auto-Reply', () => {
     expect(mockLLMService.createCompletion).toHaveBeenCalled();
   });
 
+  it('should process group chat with Lark <at> mention format', async () => {
+    const event: any = {
+      message: {
+        content: JSON.stringify({ text: '<at user_id="ou_xxx">Bot</at> Hello' }),
+        chat_type: 'group',
+        message_id: 'msg123-at'
+      },
+      sender: { sender_id: { user_id: 'user123' } }
+    };
+
+    const result = await processor.process(event);
+    expect(result).toBe('Bot response');
+    expect(mockLLMService.createCompletion).toHaveBeenCalled();
+  });
+
+  it('should process group post message with structured at tag mention', async () => {
+    const event: any = {
+      message: {
+        content: JSON.stringify({
+          zh_cn: {
+            title: '',
+            content: [[
+              { tag: 'at', user_id: 'ou_xxx', user_name: 'Bot' },
+              { tag: 'text', text: ' 手伝って' }
+            ]]
+          }
+        }),
+        chat_type: 'group',
+        message_id: 'msg123-post'
+      },
+      sender: { sender_id: { user_id: 'user123' } }
+    };
+
+    const result = await processor.process(event);
+    expect(result).toBe('Bot response');
+    expect(mockLLMService.createCompletion).toHaveBeenCalled();
+  });
+
   it('should process group chat without mention but with root_id (thread)', async () => {
     const event: any = {
       message: {

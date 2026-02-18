@@ -29,14 +29,15 @@ export class MessageProcessor {
     try {
       logger.startMetric(metricId, 'process_message', { chatId, userId });
 
-      const messageText = this.parseMessageContent(message.content);
+      const parsedContent = this.parseMessageContent(message.content);
+      const messageText = parsedContent.text;
       if (!messageText) {
         logger.debug(`Skipping empty message`, context);
         return '';
       }
 
       const isGroup = message.chat_type === 'group';
-      const isMentioned = this.hasMentions(messageText);
+      const isMentioned = parsedContent.hasMention || this.hasMentions(messageText);
       const isThread = !!message.root_id;
 
       // In group chats, only process if mentioned or it's a thread (to avoid noise)
@@ -172,22 +173,73 @@ export class MessageProcessor {
     return finalResponse;
   }
 
-  private parseMessageContent(content?: string): string {
-    if (!content) return '';
+  private parseMessageContent(content?: string): { text: string; hasMention: boolean } {
+    if (!content) return { text: '', hasMention: false };
     try {
-      const parsed: LarkTextContent = JSON.parse(content);
-      return parsed.text || '';
+      const parsed = JSON.parse(content) as LarkTextContent | Record<string, unknown>;
+      const directText = typeof (parsed as LarkTextContent).text === 'string'
+        ? (parsed as LarkTextContent).text
+        : '';
+      const extractedText = directText || this.extractTextFromStructuredContent(parsed);
+
+      return {
+        text: extractedText || '',
+        hasMention: this.hasStructuredMention(parsed) || this.hasMentions(directText || extractedText || ''),
+      };
     } catch {
-      return content || '';
+      return {
+        text: content || '',
+        hasMention: this.hasMentions(content || ''),
+      };
     }
   }
 
   private removeMentions(text: string): string {
-    return text.replace(/@_user_\d+\s*/g, '').trim();
+    return text
+      .replace(/<at\b[^>]*>.*?<\/at>\s*/gi, '')
+      .replace(/@_user_\d+\s*/g, '')
+      .trim();
   }
 
   private hasMentions(text: string): boolean {
-    return /@_user_\d+/.test(text);
+    return /@_user_\d+|<at\b[^>]*>/i.test(text);
+  }
+
+  private hasStructuredMention(value: unknown): boolean {
+    if (Array.isArray(value)) {
+      return value.some(item => this.hasStructuredMention(item));
+    }
+    if (value && typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      if (record.tag === 'at') return true;
+      return Object.values(record).some(item => this.hasStructuredMention(item));
+    }
+    return false;
+  }
+
+  private extractTextFromStructuredContent(value: unknown): string {
+    const parts: string[] = [];
+
+    const visit = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        node.forEach(visit);
+        return;
+      }
+      if (!node || typeof node !== 'object') return;
+
+      const record = node as Record<string, unknown>;
+      if (typeof record.text === 'string') {
+        parts.push(record.text);
+      }
+
+      for (const [key, child] of Object.entries(record)) {
+        if (key === 'text') continue;
+        visit(child);
+      }
+    };
+
+    visit(value);
+    return parts.join('').trim();
   }
 
   private buildSystemPrompt(): string {
