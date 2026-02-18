@@ -8,12 +8,19 @@ import { logger } from '../utils/logger.js';
 import { LLMService } from './llm-service.js';
 import { ToolExecutor } from './tool-executor.js';
 import { ConversationStorage } from '../storage/interface.js';
+import {
+  IntentPlanner,
+  IntentPlannerLike,
+  IntentPlan,
+  RequesterIdentity,
+} from './intent-planner.js';
 
 export class MessageProcessor {
   constructor(
     private llmService: LLMService,
     private toolExecutor: ToolExecutor,
-    private storage: ConversationStorage
+    private storage: ConversationStorage,
+    private intentPlanner: IntentPlannerLike = new IntentPlanner()
   ) {}
 
   /**
@@ -51,9 +58,10 @@ export class MessageProcessor {
       await this.storage.setTimestamp(chatId, Date.now());
 
       const cleanText = this.removeMentions(messageText);
-      history.push({ role: 'user', content: cleanText });
+      const intentPlan = this.intentPlanner.createPlan(cleanText);
+      history.push({ role: 'user', content: intentPlan.normalizedUserText || cleanText });
 
-      const systemPrompt = this.buildSystemPrompt();
+      const systemPrompt = this.buildSystemPrompt(intentPlan);
       const messagesForLlm = [
         { role: 'system', content: systemPrompt },
         ...history.slice(-20),
@@ -78,7 +86,8 @@ export class MessageProcessor {
           toolCalls,
           systemPrompt,
           context,
-          requesterIdentity
+          requesterIdentity,
+          intentPlan
         );
       } else {
         finalResponse = responseMessage.content?.trim() || '';
@@ -115,13 +124,8 @@ export class MessageProcessor {
     toolCalls: any[],
     systemPrompt: string,
     context: LogContext,
-    requesterIdentity: {
-      userId?: string;
-      openId?: string;
-      unionId?: string;
-      email?: string;
-      mobile?: string;
-    }
+    requesterIdentity: RequesterIdentity,
+    intentPlan: IntentPlan
   ): Promise<string> {
     const mutationResultUrls = new Set<string>();
 
@@ -146,7 +150,8 @@ export class MessageProcessor {
       const functionArgs = this.enrichToolArgumentsForRequester(
         functionName,
         this.parseToolArguments(rawArgs, functionName, context),
-        requesterIdentity
+        requesterIdentity,
+        intentPlan
       );
 
       const result = await this.toolExecutor.executeToolCall(functionName, functionArgs);
@@ -256,15 +261,19 @@ export class MessageProcessor {
     return parts.join('').trim();
   }
 
-  private buildSystemPrompt(): string {
+  private buildSystemPrompt(intentPlan: IntentPlan): string {
     const functions = this.toolExecutor.convertMcpToolsToFunctions();
     const toolDocs = functions.map(f => `- ${f.function.name}: ${f.function.description}`).join('\n');
+    const plannerHints = intentPlan.slotHints.intent
+      ? `\nPlanner hints:\n- intent: ${intentPlan.slotHints.intent}\n- time_min: ${intentPlan.slotHints.timeMin || '(none)'}\n- time_max: ${intentPlan.slotHints.timeMax || '(none)'}\n- confidence: ${intentPlan.slotHints.confidence}`
+      : '';
     
     return `あなたはLarkのAIアシスタントボットです。
 ユーザーのリクエストに応じてLark APIを通じて様々な操作を実行できます。
 
 利用可能なツール:
 ${toolDocs}
+${plannerHints}
 
 重要: tool call の arguments は必ず厳密なJSON objectを出力してください。XML風タグ（<tool_call>, <arg_value>）や key=value 連結形式は使用禁止です。
 例: calendar.v4.freebusy.list の arguments は {"time_min":"2025-02-18T00:00:00+09:00","time_max":"2025-02-25T00:00:00+09:00","user_ids":["me"]} のようなJSONにしてください。
@@ -282,13 +291,8 @@ ${toolDocs}
   private enrichToolArgumentsForRequester(
     toolName: string,
     args: Record<string, unknown>,
-    requesterIdentity: {
-      userId?: string;
-      openId?: string;
-      unionId?: string;
-      email?: string;
-      mobile?: string;
-    }
+    requesterIdentity: RequesterIdentity,
+    intentPlan: IntentPlan
   ): Record<string, unknown> {
     const enriched = this.applyRequesterIdentity(args, requesterIdentity) as Record<string, unknown>;
 
@@ -303,6 +307,15 @@ ${toolDocs}
     const data = (enriched.data && typeof enriched.data === 'object' && !Array.isArray(enriched.data))
       ? { ...(enriched.data as Record<string, unknown>) }
       : {};
+
+    const hintedTimeMin = intentPlan.slotHints.timeMin;
+    const hintedTimeMax = intentPlan.slotHints.timeMax;
+    if (!enriched.time_min && !data.time_min && hintedTimeMin) {
+      enriched.time_min = hintedTimeMin;
+    }
+    if (!enriched.time_max && !data.time_max && hintedTimeMax) {
+      enriched.time_max = hintedTimeMax;
+    }
 
     const flatUserIds = Array.isArray(enriched.user_ids)
       ? (enriched.user_ids as unknown[]).map(v => String(v))
@@ -352,13 +365,7 @@ ${toolDocs}
     user_id?: string;
     open_id?: string;
     union_id?: string;
-  }): {
-    userId?: string;
-    openId?: string;
-    unionId?: string;
-    email?: string;
-    mobile?: string;
-  } {
+  }): RequesterIdentity {
     const getEnv = (...keys: string[]): string | undefined => {
       for (const key of keys) {
         const value = process.env[key]?.trim();

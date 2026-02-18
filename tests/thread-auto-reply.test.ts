@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MessageProcessor } from '../src/bot/message-processor.js';
+import type { IntentPlannerLike } from '../src/bot/intent-planner.js';
 
 // Mock dependencies
 const mockLLMService: any = {
@@ -22,10 +23,17 @@ const mockStorage: any = {
 
 describe('MessageProcessor - Thread Auto-Reply', () => {
   let processor: MessageProcessor;
+  let mockIntentPlanner: IntentPlannerLike;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    processor = new MessageProcessor(mockLLMService, mockToolExecutor, mockStorage);
+    mockIntentPlanner = {
+      createPlan: vi.fn((userText: string) => ({
+        normalizedUserText: userText,
+        slotHints: { confidence: 0 },
+      })),
+    };
+    processor = new MessageProcessor(mockLLMService, mockToolExecutor, mockStorage, mockIntentPlanner);
   });
 
   afterEach(() => {
@@ -455,6 +463,59 @@ describe('MessageProcessor - Thread Auto-Reply', () => {
         user_id: 'env-user-001',
         email: 'user@example.com',
         mobile: '+819000000000',
+      });
+    });
+
+    it('should fill missing freebusy time range from planner hints', async () => {
+      (mockIntentPlanner.createPlan as ReturnType<typeof vi.fn>).mockReturnValue({
+        normalizedUserText: '来週の空き',
+        slotHints: {
+          intent: 'calendar_freebusy',
+          timeMin: '2025-02-24T00:00:00+09:00',
+          timeMax: '2025-03-03T00:00:00+09:00',
+          confidence: 0.9,
+        },
+      });
+
+      mockLLMService.createCompletion
+        .mockResolvedValueOnce({
+          choices: [{
+            message: {
+              content: '',
+              tool_calls: [{
+                id: 'call-freebusy-no-time',
+                type: 'function',
+                function: {
+                  name: 'calendar.v4.freebusy.list',
+                  arguments: JSON.stringify({ user_ids: ['me'] })
+                }
+              }]
+            }
+          }]
+        })
+        .mockResolvedValueOnce({
+          choices: [{ message: { content: 'OK' } }]
+        });
+
+      mockToolExecutor.executeToolCall.mockResolvedValueOnce('{"ok": true}');
+
+      const event: any = {
+        message: {
+          content: JSON.stringify({ text: '来週空いてる？' }),
+          chat_type: 'p2p',
+          message_id: 'msg137'
+        },
+        sender: { sender_id: { user_id: 'user123' } }
+      };
+
+      await processor.process(event);
+
+      expect(mockToolExecutor.executeToolCall).toHaveBeenCalledWith('calendar.v4.freebusy.list', {
+        user_ids: ['user123'],
+        user_id: 'user123',
+        user_id_type: 'user_id',
+        time_min: '2025-02-24T00:00:00+09:00',
+        time_max: '2025-03-03T00:00:00+09:00',
       });
     });
   });
