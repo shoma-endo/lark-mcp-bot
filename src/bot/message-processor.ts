@@ -35,7 +35,15 @@ export class MessageProcessor {
         return '';
       }
 
-      logger.info(`Processing message`, context, { messageLength: messageText.length });
+      const isGroup = message.chat_type === 'group';
+      const isMentioned = this.hasMentions(messageText);
+      const isThread = !!message.root_id;
+
+      // In group chats, only process if mentioned or it's a thread (to avoid noise)
+      if (isGroup && !isMentioned && !isThread) {
+        logger.debug(`Skipping group message: not mentioned and not in thread`, context);
+        return '';
+      }
 
       const history = await this.storage.getHistory(chatId);
       await this.storage.setTimestamp(chatId, Date.now());
@@ -176,6 +184,10 @@ export class MessageProcessor {
 
   private removeMentions(text: string): string {
     return text.replace(/@_user_\d+\s*/g, '').trim();
+  }
+
+  private hasMentions(text: string): boolean {
+    return /@_user_\d+/.test(text);
   }
 
   private buildSystemPrompt(): string {

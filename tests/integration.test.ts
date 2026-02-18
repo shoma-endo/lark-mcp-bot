@@ -12,6 +12,7 @@ vi.mock('@larksuiteoapi/node-sdk', () => {
     im: {
       message: {
         create: vi.fn().mockResolvedValue({ data: { message_id: 'msg123' } }),
+        reply: vi.fn().mockResolvedValue({ data: { message_id: 'msg123' } }),
       },
       chat: {
         list: vi.fn().mockResolvedValue({
@@ -128,6 +129,7 @@ describe('LarkMCPBot Integration Tests', () => {
       };
 
       await (bot as any).handleMessageReceive(messageEvent);
+      await bot.waitForPendingProcessing();
 
       // Verify conversation was stored
       const storage = bot.getStorage();
@@ -135,10 +137,10 @@ describe('LarkMCPBot Integration Tests', () => {
       expect(history.length).toBeGreaterThan(0);
 
       // Verify message was sent
-      expect(bot.larkClient.im.message.create).toHaveBeenCalled();
+      expect(bot.larkClient.im.message.reply).toHaveBeenCalled();
 
       // Verify the message content is appropriate
-      const sentMessage = bot.larkClient.im.message.create as ReturnType<typeof vi.fn>;
+      const sentMessage = bot.larkClient.im.message.reply as ReturnType<typeof vi.fn>;
       const lastCall = sentMessage.mock.calls[0][0];
       const content = JSON.parse(lastCall.data.content);
       expect(content.text).toBeTruthy();
@@ -207,12 +209,13 @@ describe('LarkMCPBot Integration Tests', () => {
       };
 
       await (bot as any).handleMessageReceive(messageEvent);
+      await bot.waitForPendingProcessing();
 
       // Verify OpenAI was called twice (initial + follow-up)
       expect(mockOpenAI.chat.completions.create).toHaveBeenCalledTimes(2);
 
       // Verify message was sent with final response
-      expect(bot.larkClient.im.message.create).toHaveBeenCalled();
+      expect(bot.larkClient.im.message.reply).toHaveBeenCalled();
 
       consoleSpy.mockRestore();
     });
@@ -239,6 +242,7 @@ describe('LarkMCPBot Integration Tests', () => {
       };
 
       await (bot as any).handleMessageReceive(messageEvent1);
+      await bot.waitForPendingProcessing();
 
       const history1 = await storage.getHistory('chat-123');
       expect(history1.length).toBeGreaterThanOrEqual(2); // At least user + assistant message
@@ -258,6 +262,7 @@ describe('LarkMCPBot Integration Tests', () => {
       };
 
       await (bot as any).handleMessageReceive(messageEvent2);
+      await bot.waitForPendingProcessing();
 
       const history2 = await storage.getHistory('chat-123');
       expect(history2.length).toBeGreaterThan(history1Length);
@@ -291,6 +296,7 @@ describe('LarkMCPBot Integration Tests', () => {
       };
 
       await (bot as any).handleMessageReceive(messageEvent1);
+      await bot.waitForPendingProcessing();
 
       // Chat 2
       const messageEvent2 = {
@@ -306,6 +312,7 @@ describe('LarkMCPBot Integration Tests', () => {
       };
 
       await (bot as any).handleMessageReceive(messageEvent2);
+      await bot.waitForPendingProcessing();
 
       // Verify both conversations exist independently
       const history1 = await storage.getHistory('chat-1');
@@ -353,13 +360,14 @@ describe('LarkMCPBot Integration Tests', () => {
       };
 
       await (bot as any).handleMessageReceive(messageEvent);
+      await bot.waitForPendingProcessing();
 
       // Verify error was logged
       expect(errorSpy).toHaveBeenCalled();
 
       // Verify user-friendly error message was sent
-      expect(bot.larkClient.im.message.create).toHaveBeenCalled();
-      const lastCall = (bot.larkClient.im.message.create as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(bot.larkClient.im.message.reply).toHaveBeenCalled();
+      const lastCall = (bot.larkClient.im.message.reply as ReturnType<typeof vi.fn>).mock.calls[0];
       const content = JSON.parse(lastCall[0].data.content);
       expect(content.text).toBeTruthy();
 
@@ -372,30 +380,30 @@ describe('LarkMCPBot Integration Tests', () => {
       const bot = new LarkMCPBot();
 
       // Mock Lark API to fail with a retryable error
-      (bot.larkClient.im.message.create as ReturnType<typeof vi.fn>)
+      (bot.larkClient.im.message.reply as ReturnType<typeof vi.fn>)
         .mockRejectedValue(new Error('Lark API: 500 Internal Server Error'));
 
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       try {
-        // maxRetries: 2 means total 3 attempts
-        await (bot as any).sendMessageWithRetry('chat-123', 'Hello', { chatId: 'chat-123' }, 2);
+        // maxRetries: 2 means total 3 attempts (initial + 2 retries)
+        await (bot as any).sendMessageWithRetry('chat-123', 'Hello', { chatId: 'chat-123' }, undefined, 2);
         expect.fail('Should have thrown an error after retries exhausted');
       } catch (error) {
         expect(error).toBeInstanceOf(Error);
-        expect((error as Error).message).toContain('500');
+        expect((error as any).cause?.message).toContain('500');
       }
 
       // Verify retry attempts (initial + 2 retries = 3 calls)
-      expect(bot.larkClient.im.message.create).toHaveBeenCalledTimes(3);
+      expect(bot.larkClient.im.message.reply).toHaveBeenCalledTimes(3);
 
       // Verify warning logs for retry attempts
       expect(warnSpy).toHaveBeenCalled();
 
       consoleSpy.mockRestore();
       warnSpy.mockRestore();
-    });
+    }, 10000);
 
     it('should handle MCP tool execution errors', async () => {
       const { larkOapiHandler } = await import('@larksuiteoapi/lark-mcp/dist/mcp-tool/utils/index.js');
@@ -429,7 +437,7 @@ describe('LarkMCPBot Integration Tests', () => {
       const bot = new LarkMCPBot();
 
       // Ensure Lark API returns 401 error for all calls
-      (bot.larkClient.im.message.create as ReturnType<typeof vi.fn>)
+      (bot.larkClient.im.message.reply as ReturnType<typeof vi.fn>)
         .mockRejectedValue(new Error('Lark API: Unauthorized'));
 
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -449,6 +457,7 @@ describe('LarkMCPBot Integration Tests', () => {
       };
 
       await (bot as any).handleMessageReceive(messageEvent);
+      await bot.waitForPendingProcessing();
 
       // Verify conversation was stored with plain text
       const storage = bot.getStorage();
@@ -472,7 +481,7 @@ describe('LarkMCPBot Integration Tests', () => {
       const bot = new LarkMCPBot();
 
       // Ensure Lark API returns 401 error for all calls
-      (bot.larkClient.im.message.create as ReturnType<typeof vi.fn>)
+      (bot.larkClient.im.message.reply as ReturnType<typeof vi.fn>)
         .mockRejectedValue(new Error('Lark API: Unauthorized'));
 
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -503,6 +512,7 @@ describe('LarkMCPBot Integration Tests', () => {
       };
 
       await (bot as any).handleMessageReceive(messageEvent);
+      await bot.waitForPendingProcessing();
 
       // Verify history was trimmed
       const updatedHistory = await storage.getHistory('chat-123');

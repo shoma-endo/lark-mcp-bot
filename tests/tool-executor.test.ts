@@ -1,0 +1,122 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { ToolExecutor } from '../src/bot/tool-executor.js';
+import { config } from '../src/config.js';
+import * as larkUtils from '@larksuiteoapi/lark-mcp/dist/mcp-tool/utils/index.js';
+
+// Mock dependencies
+vi.mock('@larksuiteoapi/lark-mcp/dist/mcp-tool/utils/index.js', () => ({
+  larkOapiHandler: vi.fn(),
+}));
+
+vi.mock('../src/config.js', () => ({
+  config: {
+    disabledTools: [],
+  },
+}));
+
+describe('ToolExecutor', () => {
+  let toolExecutor: ToolExecutor;
+  let mockLarkClient: any;
+  let mockMcpTool: any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockLarkClient = {};
+    mockMcpTool = {
+      getTools: vi.fn().mockReturnValue([
+        {
+          name: 'test_tool',
+          description: 'A test tool',
+          schema: { type: 'object', properties: { p: { type: 'string' } } }
+        },
+        {
+          name: 'test.tool.create',
+          description: 'A mutation tool',
+          schema: { type: 'object', properties: {} }
+        },
+        {
+          name: 'disabled_tool',
+          description: 'A disabled tool',
+          schema: { type: 'object', properties: {} }
+        }
+      ]),
+    };
+    toolExecutor = new ToolExecutor(mockLarkClient, mockMcpTool);
+  });
+
+  it('should filter MCP tools based on config', () => {
+    config.disabledTools = ['disabled_tool'];
+    const tools = mockMcpTool.getTools();
+    const filtered = toolExecutor.filterMcpTools(tools);
+    expect(filtered.length).toBe(2);
+    expect(filtered.find(t => t.name === 'disabled_tool')).toBeUndefined();
+    config.disabledTools = []; // Reset
+  });
+
+  it('should convert MCP tools to functions', () => {
+    const functions = toolExecutor.convertMcpToolsToFunctions();
+    expect(functions.length).toBe(3);
+    expect(functions[0].function.name).toBe('test_tool');
+    expect(functions[0].function.parameters.type).toBe('object');
+  });
+
+  it('should execute tool call successfully', async () => {
+    (larkUtils.larkOapiHandler as any).mockResolvedValueOnce({
+      isError: false,
+      content: [{ type: 'text', text: 'Success response' }]
+    });
+
+    const result = await toolExecutor.executeToolCall('test_tool', { p: 'val' });
+    expect(result).toBe('Success response');
+  });
+
+  it('should handle tool not found', async () => {
+    const result = await toolExecutor.executeToolCall('non_existent', {});
+    expect(result).toContain('Error');
+    expect(result).toContain('not found');
+  });
+
+  it('should handle disabled tool', async () => {
+    config.disabledTools = ['disabled_tool'];
+    const result = await toolExecutor.executeToolCall('disabled_tool', {});
+    expect(result).toContain('Error');
+    expect(result).toContain('is disabled');
+    config.disabledTools = []; // Reset
+  });
+
+  it('should handle validation error (empty tool name)', async () => {
+    const result = await toolExecutor.executeToolCall('', {});
+    expect(result).toContain('Error');
+    expect(result).toContain('Invalid tool name');
+  });
+
+  it('should handle tool execution failure from handler', async () => {
+    (larkUtils.larkOapiHandler as any).mockResolvedValueOnce({
+      isError: true,
+      content: [{ type: 'text', text: 'Handler Error' }]
+    });
+
+    const result = await toolExecutor.executeToolCall('test_tool', {});
+    expect(result).toContain('Error');
+    expect(result).toContain('Handler Error');
+  });
+
+  it('should detect mutation tools', () => {
+    expect(toolExecutor.isMutationTool('test.tool.create')).toBe(true);
+    expect(toolExecutor.isMutationTool('test.tool.update')).toBe(true);
+    expect(toolExecutor.isMutationTool('test_tool')).toBe(false);
+  });
+
+  it('should extract URLs and build mutation links', () => {
+    const text = 'Check here: https://example.com and https://test.org';
+    const urls = toolExecutor.extractUrls(text);
+    expect(urls).toHaveLength(2);
+    expect(urls).toContain('https://example.com');
+
+    const links = toolExecutor.buildMutationResultLinks('test.tool.create', text);
+    expect(links).toHaveLength(2);
+
+    const nonMutationLinks = toolExecutor.buildMutationResultLinks('test_tool', text);
+    expect(nonMutationLinks).toHaveLength(0);
+  });
+});
