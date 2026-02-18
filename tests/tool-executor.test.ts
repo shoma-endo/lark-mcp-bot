@@ -62,6 +62,17 @@ describe('ToolExecutor', () => {
             },
             required: ['app_token'],
           }
+        },
+        {
+          name: 'docx.v1.document.rawContent',
+          description: 'Get document content',
+          schema: {
+            type: 'object',
+            properties: {
+              document_id: { type: 'string' },
+            },
+            required: ['document_id'],
+          }
         }
       ]),
     };
@@ -72,7 +83,7 @@ describe('ToolExecutor', () => {
     config.disabledTools = ['disabled_tool'];
     const tools = mockMcpTool.getTools();
     const filtered = toolExecutor.filterMcpTools(tools);
-    expect(filtered.length).toBe(4);
+    expect(filtered.length).toBe(5);
     expect(filtered.find(t => t.name === 'disabled_tool')).toBeUndefined();
     config.disabledTools = []; // Reset
   });
@@ -80,7 +91,7 @@ describe('ToolExecutor', () => {
   it('should convert MCP tools to functions', () => {
     config.disabledTools = [];
     const functions = toolExecutor.convertMcpToolsToFunctions();
-    expect(functions.length).toBe(5);
+    expect(functions.length).toBe(6);
     expect(functions[0].function.name).toBe('test_tool');
     expect(functions[0].function.parameters.type).toBe('object');
   });
@@ -217,6 +228,25 @@ describe('ToolExecutor', () => {
     });
     expect(result).toContain('Cannot access this Bitable Base');
     expect(result).toContain('Share the Base with the bot app');
+  });
+
+  it('should extract document token from doc URL', async () => {
+    (larkUtils.larkOapiHandler as any).mockResolvedValueOnce({
+      isError: false,
+      content: [{ type: 'text', text: 'ok' }]
+    });
+
+    await toolExecutor.executeToolCall('docx.v1.document.rawContent', {
+      url: 'https://example.feishu.cn/docx/doxcnAbCdEf12345',
+    });
+
+    expect(larkUtils.larkOapiHandler).toHaveBeenCalledWith(
+      mockLarkClient,
+      expect.objectContaining({
+        document_id: 'doxcnAbCdEf12345',
+      }),
+      expect.anything()
+    );
   });
 
   it('should detect mutation tools', () => {

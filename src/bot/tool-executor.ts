@@ -160,17 +160,19 @@ export class ToolExecutor {
   }
 
   private normalizeToolParameters(toolName: string, parameters: Record<string, unknown>): Record<string, unknown> {
+    const linkNormalized = this.normalizeLinkTokens(toolName, parameters);
+
     if (toolName.startsWith('bitable.')) {
-      return this.normalizeBitableParameters(parameters);
+      return this.normalizeBitableParameters(linkNormalized);
     }
-    if (toolName !== 'calendar.v4.freebusy.list') return parameters;
+    if (toolName !== 'calendar.v4.freebusy.list') return linkNormalized;
 
-    const maybeData = parameters.data;
+    const maybeData = linkNormalized.data;
     if (maybeData && typeof maybeData === 'object' && !Array.isArray(maybeData)) {
-      return parameters;
+      return linkNormalized;
     }
 
-    const flat = { ...parameters };
+    const flat = { ...linkNormalized };
     const data: Record<string, unknown> = {};
     const params: Record<string, unknown> = {};
 
@@ -203,7 +205,7 @@ export class ToolExecutor {
     const userIdType = getString('user_id_type');
     if (userIdType) params.user_id_type = userIdType;
 
-    const normalized: Record<string, unknown> = { ...parameters };
+    const normalized: Record<string, unknown> = { ...linkNormalized };
     delete normalized.time_min;
     delete normalized.time_max;
     delete normalized.user_id;
@@ -216,6 +218,77 @@ export class ToolExecutor {
     normalized.data = data;
     if (Object.keys(params).length > 0) normalized.params = params;
     return normalized;
+  }
+
+  private normalizeLinkTokens(toolName: string, parameters: Record<string, unknown>): Record<string, unknown> {
+    const normalized: Record<string, unknown> = { ...parameters };
+    const data = normalized.data && typeof normalized.data === 'object' && !Array.isArray(normalized.data)
+      ? { ...(normalized.data as Record<string, unknown>) }
+      : undefined;
+
+    const sources: string[] = [];
+    const add = (v: unknown): void => {
+      if (typeof v === 'string' && v.trim()) sources.push(v.trim());
+    };
+    for (const key of ['url', 'doc_url', 'document_url', 'sheet_url', 'wiki_url', 'link', 'text', 'content']) {
+      add(normalized[key]);
+      add(data?.[key]);
+    }
+
+    if (sources.length === 0) return normalized;
+
+    for (const source of sources) {
+      const token = this.extractTokenFromUrl(toolName, source);
+      if (!token) continue;
+      const targetKeys = this.getTokenTargetKeys(toolName);
+      const key = targetKeys.find(k => !normalized[k] && !(data && data[k]));
+      if (key) {
+        normalized[key] = token;
+        if (data) data[key] = token;
+      }
+      break;
+    }
+
+    if (data) normalized.data = data;
+    return normalized;
+  }
+
+  private getTokenTargetKeys(toolName: string): string[] {
+    if (toolName.startsWith('docx.')) {
+      return ['document_id', 'document_token', 'obj_token', 'token'];
+    }
+    if (toolName.startsWith('sheets.')) {
+      return ['spreadsheet_token', 'sheet_token', 'obj_token', 'token'];
+    }
+    if (toolName.startsWith('wiki.')) {
+      return ['node_token', 'wiki_token', 'node_id', 'obj_token', 'token'];
+    }
+    if (toolName.startsWith('drive.')) {
+      return ['file_token', 'token', 'obj_token'];
+    }
+    if (toolName.startsWith('bitable.')) {
+      return ['app_token'];
+    }
+    return ['token', 'obj_token'];
+  }
+
+  private extractTokenFromUrl(toolName: string, text: string): string | null {
+    if (toolName.startsWith('bitable.')) return this.extractBitableAppToken(text);
+
+    const patterns: RegExp[] = [];
+    if (toolName.startsWith('docx.')) patterns.push(/\/docx\/([a-zA-Z0-9]+)/, /\/docs\/([a-zA-Z0-9]+)/);
+    if (toolName.startsWith('sheets.')) patterns.push(/\/sheets\/([a-zA-Z0-9]+)/);
+    if (toolName.startsWith('wiki.')) patterns.push(/\/wiki\/([a-zA-Z0-9]+)/);
+    if (toolName.startsWith('drive.')) patterns.push(/\/file\/([a-zA-Z0-9]+)/, /\/drive\/[a-z]+\/([a-zA-Z0-9]+)/);
+
+    for (const pattern of patterns) {
+      const matched = text.match(pattern);
+      if (matched?.[1]) return matched[1];
+    }
+
+    const generic = text.match(/\/(docx|docs|sheets|wiki)\/([a-zA-Z0-9]+)/);
+    if (generic?.[2]) return generic[2];
+    return null;
   }
 
   private normalizeBitableParameters(parameters: Record<string, unknown>): Record<string, unknown> {
