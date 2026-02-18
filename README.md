@@ -25,163 +25,111 @@ Lark（Feishu）のテナント内をMCP（Model Context Protocol）経由で自
 
 ## 🏗️ アーキテクチャ
 
-### 全体構成
+現在の実装（`src/bot/index.ts`, `src/bot/message-processor.ts`, `src/bot/tool-executor.ts`, `api/webhook.ts`）に基づく構成です。
+
+### 全体構成（実装準拠）
 
 ```mermaid
 graph TB
-    subgraph "External Services"
-        LarkAPI["Lark Open Platform"]
-        GLM["GLM-4.7<br/>(Zhipu AI)"]
-        Redis["Upstash Redis"]
-    end
-
     subgraph "Entry Points"
-        Local["Local Server<br/>:3000/webhook/event"]
-        Vercel["Vercel Serverless<br/>api/webhook.ts"]
+        Local["Local HTTP Server<br/>src/index.ts"]
+        Vercel["Vercel Function<br/>api/webhook.ts"]
     end
 
-    subgraph "Core System"
-        ED["EventDispatcher<br/>im.message.receive_v1"]
+    subgraph "Runtime"
+        Dispatcher["Lark EventDispatcher<br/>im.message.receive_v1"]
         Bot["LarkMCPBot"]
-        MCP["MCP Tool Layer<br/>100+ Lark API Tools"]
+        Processor["MessageProcessor"]
+        Planner["IntentPlanner"]
+        LLM["LLMService"]
+        Exec["ToolExecutor"]
         Storage["ConversationStorage"]
     end
 
-    subgraph "Storage Backends"
-        Mem["MemoryStorage<br/>(開発用)"]
-        RedisStore["RedisStorage<br/>(本番用)"]
+    subgraph "External"
+        LarkAPI["Lark Open Platform"]
+        GLM["GLM API (OpenAI互換)"]
+        MCP["LarkMcpTool / larkOapiHandler"]
+        Redis["Upstash Redis"]
     end
 
-    LarkAPI -- "Webhook Event" --> Local
-    LarkAPI -- "Webhook Event" --> Vercel
-    Local --> ED
-    Vercel --> ED
-    ED --> Bot
-    Bot -- "Function Calling" --> GLM
-    Bot -- "Tool実行" --> MCP
-    MCP -- "API Call" --> LarkAPI
-    Bot --> Storage
-    Storage --> Mem
-    Storage --> RedisStore
-    RedisStore --> Redis
-    Bot -- "応答送信" --> LarkAPI
+    LarkAPI --> Local
+    LarkAPI --> Vercel
+    Local --> Dispatcher
+    Vercel --> Dispatcher
+    Dispatcher --> Bot
+    Bot --> Processor
+    Processor --> Planner
+    Processor --> LLM
+    Processor --> Exec
+    Exec --> MCP
+    MCP --> LarkAPI
+    Processor --> Storage
+    Storage --> Redis
+    LLM --> GLM
+    Bot --> LarkAPI
 ```
+
+### コンポーネント責務
+
+- `LarkMCPBot`
+  - イベント受信、重複排除、非同期処理制御、返信リトライを担当
+  - Vercel実行時は webhook ライフサイクル内で処理完了まで `await`
+- `MessageProcessor`
+  - メンション判定、履歴読み書き、システムプロンプト生成、Function Calling ループを担当
+  - ツール実行後の follow-up 呼び出しでも `tools` を再送して再帰的に tool call を処理
+- `ToolExecutor`
+  - MCPツールを Function 定義に変換し、呼び出し時にバリデーションと実行を実施
+  - `calendar.v4.freebusy.list` など一部ツールの引数正規化を実装
+- `ConversationStorage`
+  - `UPSTASH_REDIS_*` が設定されていれば Redis、未設定なら Memory を利用
 
 ### メッセージ処理シーケンス
 
-ユーザーがLarkでボットにメンションしてから応答が返るまでの流れ:
-
 ```mermaid
 sequenceDiagram
-    participant U as Larkユーザー
+    participant U as User
     participant L as Lark API
-    participant W as Webhook<br/>(Local/Vercel)
+    participant W as Webhook (Local/Vercel)
     participant B as LarkMCPBot
-    participant S as Storage<br/>(Redis/Memory)
-    participant G as GLM-4.7
-    participant M as MCP Tools
+    participant P as MessageProcessor
+    participant S as Storage
+    participant G as GLM
+    participant T as ToolExecutor
+    participant M as MCP/Lark API
 
-    U->>L: @bot メッセージ送信
+    U->>L: メッセージ送信
     L->>W: im.message.receive_v1
-    W->>B: handleMessageReceive()
+    W->>B: dispatch
+    B->>B: 重複排除(event_id/message_id)
+    B->>P: process()
+    P->>S: getHistory(chatId)
+    P->>G: createCompletion(messages, tools)
 
-    B->>S: getHistory(chatId)
-    S-->>B: 会話履歴
-
-    B->>G: chat.completions.create()<br/>(messages + tools定義)
-
-    alt Tool呼び出しが必要な場合
-        G-->>B: tool_calls: [{name, arguments}]
-        B->>M: executeToolCall()
-        M->>L: Lark API実行
-        L-->>M: API結果
-        M-->>B: ツール実行結果
-        B->>G: 再度呼び出し(ツール結果付き)
-        G-->>B: 最終応答テキスト
-    else 直接応答の場合
-        G-->>B: 応答テキスト
+    loop tool call が返る限り
+        G-->>P: assistant + tool_calls
+        P->>T: executeToolCall(name, args)
+        T->>M: larkOapiHandler(...)
+        M-->>T: tool result
+        T-->>P: tool result text
+        P->>G: createCompletion(history+tool, tools)
     end
 
-    B->>S: setHistory(chatId, messages)
-    B->>L: sendMessage(応答)
-    L->>U: ボット応答表示
+    G-->>P: final text
+    P->>S: setHistory(chatId, ...)
+    P-->>B: response text
+    B->>L: reply (retry付き)
 ```
 
-### エラーハンドリング階層
+### エラークラス
 
-```mermaid
-graph TD
-    Base["LarkBotError<br/>(基底クラス)"]
-    Base --> LLM["LLMError<br/>リトライ可 / 429検知"]
-    Base --> Tool["ToolExecutionError<br/>リトライ不可"]
-    Base --> API["LarkAPIError<br/>リトライ可 / 認証・ネットワーク"]
-    Base --> Rate["RateLimitError<br/>リトライ可 / 429"]
-    Base --> Res["ResourcePackageError<br/>GLM残高不足"]
-    Base --> APIRate["APIRateLimitError<br/>API同時実行制限"]
-    Base --> Val["ValidationError<br/>入力バリデーション"]
-
-    style Base fill:#f9f,stroke:#333
-    style LLM fill:#ff9,stroke:#333
-    style Rate fill:#ff9,stroke:#333
-    style API fill:#ff9,stroke:#333
-    style Tool fill:#f99,stroke:#333
-    style Res fill:#f99,stroke:#333
-    style Val fill:#f99,stroke:#333
-    style APIRate fill:#ff9,stroke:#333
-```
-
-### Miyabi Agent ワークフロー（自律開発パイプライン）
-
-GitHub Issueの作成からデプロイまでの自律型開発フロー:
-
-```mermaid
-sequenceDiagram
-    participant H as 人間
-    participant I as IssueAgent
-    participant C as CoordinatorAgent
-    participant CG as CodeGenAgent
-    participant R as ReviewAgent
-    participant T as TestAgent
-    participant PR as PRAgent
-    participant D as DeploymentAgent
-
-    H->>I: Issue作成
-    I->>I: 65ラベル体系で自動分類<br/>(type/priority/complexity)
-    I->>C: ラベル付きIssue
-
-    C->>C: DAGベースでタスク分解<br/>Critical Path特定
-    C->>CG: タスク割当
-
-    CG->>CG: コード生成 + テスト生成<br/>(TypeScript strict mode)
-    CG->>R: コード提出
-
-    R->>R: 静的解析・セキュリティスキャン<br/>品質スコアリング
-
-    alt スコア < 80点
-        R-->>CG: 差し戻し(修正指示)
-        CG->>R: 修正コード再提出
-    end
-
-    R->>T: 品質合格(≥80点)
-    T->>T: テスト実行<br/>カバレッジ確認
-
-    alt カバレッジ < 80%
-        T-->>CG: テスト追加要求
-        CG->>T: テスト追加
-    end
-
-    T->>PR: テスト合格
-    PR->>PR: Draft PR自動作成<br/>(Conventional Commits準拠)
-    PR->>H: レビュー依頼
-
-    H->>D: PR マージ
-    D->>D: 自動デプロイ<br/>ヘルスチェック
-
-    alt ヘルスチェック失敗
-        D->>D: 自動Rollback
-        D->>H: エスカレーション通知
-    end
-```
+- `LarkBotError`（基底）
+- `LLMError`
+- `ToolExecutionError`
+- `LarkAPIError`
+- `ResourcePackageError`
+- `APIRateLimitError`
+- `ValidationError`
 ## 🚀 デプロイ
 
 ### 本番環境（Vercel + Upstash Redis）推奨 ⭐
