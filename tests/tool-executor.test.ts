@@ -49,7 +49,7 @@ describe('ToolExecutor', () => {
               time_max: { type: 'string' },
               user_ids: { type: 'array' },
             },
-            required: ['time_min', 'time_max', 'user_ids'],
+            required: ['time_min', 'time_max'],
           }
         }
       ]),
@@ -111,6 +111,35 @@ describe('ToolExecutor', () => {
     expect(result).toContain('Error');
     expect(result).toContain('Missing required parameters');
     expect(larkUtils.larkOapiHandler).not.toHaveBeenCalled();
+  });
+
+  it('should normalize freebusy flat arguments to payload.data/params', async () => {
+    (larkUtils.larkOapiHandler as any).mockResolvedValueOnce({
+      isError: false,
+      content: [{ type: 'text', text: 'ok' }]
+    });
+
+    await toolExecutor.executeToolCall('calendar.v4.freebusy.list', {
+      time_min: '2025-02-19T00:00:00+08:00',
+      time_max: '2025-02-26T00:00:00+08:00',
+      user_ids: ['me'],
+      user_id_type: 'open_id',
+    });
+
+    expect(larkUtils.larkOapiHandler).toHaveBeenCalledWith(
+      mockLarkClient,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          time_min: '2025-02-19T00:00:00+08:00',
+          time_max: '2025-02-26T00:00:00+08:00',
+          user_id: 'me',
+        }),
+        params: expect.objectContaining({
+          user_id_type: 'open_id',
+        }),
+      }),
+      expect.anything()
+    );
   });
 
   it('should handle tool execution failure from handler', async () => {

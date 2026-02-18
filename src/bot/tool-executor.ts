@@ -70,7 +70,8 @@ export class ToolExecutor {
     const metricId = `tool_${toolName}_${Date.now()}`;
 
     try {
-      logger.startMetric(metricId, `execute_tool_${toolName}`, { parameters });
+      const normalizedParameters = this.normalizeToolParameters(toolName, parameters);
+      logger.startMetric(metricId, `execute_tool_${toolName}`, { parameters: normalizedParameters });
       
       if (!toolName) {
         throw new ValidationError('Invalid tool name', 'toolName');
@@ -88,9 +89,9 @@ export class ToolExecutor {
         throw new ToolExecutionError(`Tool ${toolName} not found`, toolName);
       }
 
-      this.validateRequiredParameters(tool, parameters);
+      this.validateRequiredParameters(tool, normalizedParameters);
 
-      const result = await larkOapiHandler(this.larkClient, parameters, { tool: tool as any }) as MCPToolResult;
+      const result = await larkOapiHandler(this.larkClient, normalizedParameters, { tool: tool as any }) as MCPToolResult;
 
       if (result.isError) {
         const errorContent = result.content?.[0]?.text || JSON.stringify(result.content);
@@ -141,9 +142,12 @@ export class ToolExecutor {
   private validateRequiredParameters(tool: MCPTool, parameters: Record<string, unknown>): void {
     const required = (tool.schema?.required || []).filter((key): key is string => typeof key === 'string');
     if (required.length === 0) return;
+    const data = parameters.data && typeof parameters.data === 'object' && !Array.isArray(parameters.data)
+      ? (parameters.data as Record<string, unknown>)
+      : undefined;
 
     const missing = required.filter((key) => {
-      const value = parameters[key];
+      const value = parameters[key] ?? data?.[key];
       if (value === undefined || value === null) return true;
       if (typeof value === 'string' && value.trim() === '') return true;
       if (Array.isArray(value) && value.length === 0) return true;
@@ -153,5 +157,61 @@ export class ToolExecutor {
     if (missing.length > 0) {
       throw new ValidationError(`Missing required parameters: ${missing.join(', ')}`, missing.join(', '));
     }
+  }
+
+  private normalizeToolParameters(toolName: string, parameters: Record<string, unknown>): Record<string, unknown> {
+    if (toolName !== 'calendar.v4.freebusy.list') return parameters;
+
+    const maybeData = parameters.data;
+    if (maybeData && typeof maybeData === 'object' && !Array.isArray(maybeData)) {
+      return parameters;
+    }
+
+    const flat = { ...parameters };
+    const data: Record<string, unknown> = {};
+    const params: Record<string, unknown> = {};
+
+    const getString = (key: string): string | undefined => {
+      const value = flat[key];
+      if (typeof value !== 'string') return undefined;
+      const trimmed = value.trim();
+      return trimmed || undefined;
+    };
+
+    const timeMin = getString('time_min');
+    const timeMax = getString('time_max');
+    if (timeMin) data.time_min = timeMin;
+    if (timeMax) data.time_max = timeMax;
+
+    const userId = getString('user_id');
+    const roomId = getString('room_id');
+    const userIds = Array.isArray(flat.user_ids) ? flat.user_ids.map(v => String(v)).filter(Boolean) : [];
+    if (userId) data.user_id = userId;
+    else if (!roomId && userIds.length > 0) data.user_id = userIds[0];
+    if (roomId) data.room_id = roomId;
+
+    if (typeof flat.include_external_calendar === 'boolean') {
+      data.include_external_calendar = flat.include_external_calendar;
+    }
+    if (typeof flat.only_busy === 'boolean') {
+      data.only_busy = flat.only_busy;
+    }
+
+    const userIdType = getString('user_id_type');
+    if (userIdType) params.user_id_type = userIdType;
+
+    const normalized: Record<string, unknown> = { ...parameters };
+    delete normalized.time_min;
+    delete normalized.time_max;
+    delete normalized.user_id;
+    delete normalized.user_ids;
+    delete normalized.room_id;
+    delete normalized.include_external_calendar;
+    delete normalized.only_busy;
+    delete normalized.user_id_type;
+
+    normalized.data = data;
+    if (Object.keys(params).length > 0) normalized.params = params;
+    return normalized;
   }
 }

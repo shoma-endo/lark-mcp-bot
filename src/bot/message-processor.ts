@@ -280,6 +280,9 @@ ${toolDocs}
       // fallback below
     }
 
+    const taggedParsed = this.parseTaggedKeyValueArgs(trimmed);
+    if (taggedParsed) return taggedParsed;
+
     const functionNamePattern = functionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const normalized = trimmed
       .replace(/<\/?[^>]+>/g, '')
@@ -309,7 +312,7 @@ ${toolDocs}
 
     const parsed: Record<string, unknown> = {};
     for (const [, key, rawValue] of matches) {
-      const value = rawValue.trim().replace(/:+$/, '');
+      const value = this.sanitizeLooseScalar(rawValue.trim().replace(/:+$/, ''));
       if (!value) continue;
 
       if (key.endsWith('_ids')) {
@@ -327,5 +330,37 @@ ${toolDocs}
     }
 
     return Object.keys(parsed).length > 0 ? parsed : null;
+  }
+
+  private parseTaggedKeyValueArgs(input: string): Record<string, unknown> | null {
+    const pairPattern = /<arg_key>([\s\S]*?)<\/arg_key>\s*<arg_value>([\s\S]*?)<\/arg_value>/g;
+    const matches = [...input.matchAll(pairPattern)];
+    if (matches.length === 0) return null;
+
+    const parsed: Record<string, unknown> = {};
+    for (const [, rawKey, rawValue] of matches) {
+      const key = rawKey.trim();
+      const value = this.sanitizeLooseScalar(rawValue.trim());
+      if (!key) continue;
+      if (key.endsWith('_ids')) {
+        try {
+          const parsedArray = JSON.parse(value);
+          if (Array.isArray(parsedArray)) {
+            parsed[key] = parsedArray.map(v => String(v));
+            continue;
+          }
+        } catch {
+          // fallback below
+        }
+        parsed[key] = value.split(',').map(v => this.sanitizeLooseScalar(v.trim())).filter(Boolean);
+        continue;
+      }
+      parsed[key] = value;
+    }
+    return Object.keys(parsed).length > 0 ? parsed : null;
+  }
+
+  private sanitizeLooseScalar(value: string): string {
+    return value.replace(/^"+|"+$/g, '').trim();
   }
 }
