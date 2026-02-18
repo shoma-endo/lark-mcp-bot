@@ -18,7 +18,13 @@ import { MessageProcessor } from './message-processor.js';
 /**
  * Helper function to send reply message via Lark API
  */
-async function sendReplyMessage(client: lark.Client, messageId: string, text: string, uuid?: string): Promise<void> {
+async function sendReplyMessage(
+  client: lark.Client,
+  messageId: string,
+  text: string,
+  uuid?: string,
+  replyInThread = false
+): Promise<void> {
   await client.im.message.reply({
     path: {
       message_id: messageId,
@@ -26,8 +32,8 @@ async function sendReplyMessage(client: lark.Client, messageId: string, text: st
     data: {
       content: JSON.stringify({ text }),
       msg_type: 'text',
-      reply_in_thread: true,
       uuid,
+      ...(replyInThread ? { reply_in_thread: true } : {}),
     },
   });
 }
@@ -145,12 +151,13 @@ export class LarkMCPBot {
     const { message, event_id } = data;
     const messageId = message.message_id || '';
     const chatId = message.chat_id || '';
+    const isThreadMessage = !!message.root_id;
 
     try {
       const responseText = await this.messageProcessor.process(data);
       if (responseText && messageId) {
         // Use event_id as uuid for Lark API idempotency
-        await this.sendMessageWithRetry(messageId, responseText, context, event_id);
+        await this.sendMessageWithRetry(messageId, responseText, context, event_id, 3, isThreadMessage);
       }
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
@@ -162,7 +169,14 @@ export class LarkMCPBot {
           return;
         }
         const errorReply = await this.llmService.generateLlmErrorReply('', err);
-        await this.sendMessageWithRetry(messageId, errorReply, context, event_id ? `${event_id}_err` : undefined);
+        await this.sendMessageWithRetry(
+          messageId,
+          errorReply,
+          context,
+          event_id ? `${event_id}_err` : undefined,
+          3,
+          isThreadMessage
+        );
       } catch (sendError) {
         logger.error(`Failed to send error message`, context, sendError as Error);
       }
@@ -232,12 +246,19 @@ export class LarkMCPBot {
   /**
    * Send message with retry logic and exponential backoff
    */
-  private async sendMessageWithRetry(messageId: string, text: string, context: LogContext, uuid?: string, maxRetries = 3): Promise<void> {
+  private async sendMessageWithRetry(
+    messageId: string,
+    text: string,
+    context: LogContext,
+    uuid?: string,
+    maxRetries = 3,
+    replyInThread = false
+  ): Promise<void> {
     let lastError: Error | undefined;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        await sendReplyMessage(this.larkClient, messageId, text, uuid);
+        await sendReplyMessage(this.larkClient, messageId, text, uuid, replyInThread);
         if (attempt > 0) logger.info(`Sent after retry`, context, { attempt });
         return;
       } catch (error) {

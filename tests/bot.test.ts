@@ -273,6 +273,39 @@ describe('LarkMCPBot', () => {
 
       // Verify reply message was sent
       expect(bot.larkClient.im.message.reply).toHaveBeenCalled();
+      const lastCall = (bot.larkClient.im.message.reply as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(lastCall[0].data.reply_in_thread).toBeUndefined();
+
+      consoleSpy.mockRestore();
+    });
+
+    it('should reply in thread only when user message is in thread', async () => {
+      const { LarkMCPBot } = await import('../src/bot/index.js');
+      const bot = new LarkMCPBot();
+
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      const messageEvent = {
+        message: {
+          message_id: 'msg-thread-123',
+          chat_id: 'chat-123',
+          root_id: 'msg-root-1',
+          content: JSON.stringify({ text: 'Thread message' }),
+          message_type: 'text',
+        },
+        sender: {
+          sender_id: {
+            user_id: 'user-123',
+          },
+          sender_type: 'user',
+        },
+      };
+
+      await (bot as any).handleMessageReceive(messageEvent);
+      await bot.waitForPendingProcessing();
+
+      const lastCall = (bot.larkClient.im.message.reply as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(lastCall[0].data.reply_in_thread).toBe(true);
 
       consoleSpy.mockRestore();
     });
