@@ -51,6 +51,17 @@ describe('ToolExecutor', () => {
             },
             required: ['time_min', 'time_max'],
           }
+        },
+        {
+          name: 'bitable.v1.appTable.list',
+          description: 'List bitable tables',
+          schema: {
+            type: 'object',
+            properties: {
+              app_token: { type: 'string' },
+            },
+            required: ['app_token'],
+          }
         }
       ]),
     };
@@ -61,7 +72,7 @@ describe('ToolExecutor', () => {
     config.disabledTools = ['disabled_tool'];
     const tools = mockMcpTool.getTools();
     const filtered = toolExecutor.filterMcpTools(tools);
-    expect(filtered.length).toBe(3);
+    expect(filtered.length).toBe(4);
     expect(filtered.find(t => t.name === 'disabled_tool')).toBeUndefined();
     config.disabledTools = []; // Reset
   });
@@ -69,7 +80,7 @@ describe('ToolExecutor', () => {
   it('should convert MCP tools to functions', () => {
     config.disabledTools = [];
     const functions = toolExecutor.convertMcpToolsToFunctions();
-    expect(functions.length).toBe(4);
+    expect(functions.length).toBe(5);
     expect(functions[0].function.name).toBe('test_tool');
     expect(functions[0].function.parameters.type).toBe('object');
   });
@@ -168,6 +179,44 @@ describe('ToolExecutor', () => {
     const result = await toolExecutor.executeToolCall('test_tool', {});
     expect(result).toContain('Missing required scope(s)');
     expect(result).toContain('contact:user.employee_id:readonly');
+  });
+
+  it('should extract bitable app_token from base URL', async () => {
+    (larkUtils.larkOapiHandler as any).mockResolvedValueOnce({
+      isError: false,
+      content: [{ type: 'text', text: 'ok' }]
+    });
+
+    await toolExecutor.executeToolCall('bitable.v1.appTable.list', {
+      url: 'https://example.feishu.cn/base/bascnAbCdEf12345?table=tblxxx',
+    });
+
+    expect(larkUtils.larkOapiHandler).toHaveBeenCalledWith(
+      mockLarkClient,
+      expect.objectContaining({
+        app_token: 'bascnAbCdEf12345',
+      }),
+      expect.anything()
+    );
+  });
+
+  it('should format bitable access errors with actionable guidance', async () => {
+    (larkUtils.larkOapiHandler as any).mockResolvedValueOnce({
+      isError: true,
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          code: 403,
+          msg: 'Access denied for bitable base',
+        }),
+      }],
+    });
+
+    const result = await toolExecutor.executeToolCall('bitable.v1.appTable.list', {
+      app_token: 'bascnAbCdEf12345',
+    });
+    expect(result).toContain('Cannot access this Bitable Base');
+    expect(result).toContain('Share the Base with the bot app');
   });
 
   it('should detect mutation tools', () => {

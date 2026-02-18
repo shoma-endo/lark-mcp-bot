@@ -160,6 +160,9 @@ export class ToolExecutor {
   }
 
   private normalizeToolParameters(toolName: string, parameters: Record<string, unknown>): Record<string, unknown> {
+    if (toolName.startsWith('bitable.')) {
+      return this.normalizeBitableParameters(parameters);
+    }
     if (toolName !== 'calendar.v4.freebusy.list') return parameters;
 
     const maybeData = parameters.data;
@@ -215,6 +218,54 @@ export class ToolExecutor {
     return normalized;
   }
 
+  private normalizeBitableParameters(parameters: Record<string, unknown>): Record<string, unknown> {
+    const normalized: Record<string, unknown> = { ...parameters };
+    const data = normalized.data && typeof normalized.data === 'object' && !Array.isArray(normalized.data)
+      ? { ...(normalized.data as Record<string, unknown>) }
+      : undefined;
+
+    const existingAppToken = typeof normalized.app_token === 'string'
+      ? normalized.app_token.trim()
+      : (typeof data?.app_token === 'string' ? String(data.app_token).trim() : '');
+    if (existingAppToken) return normalized;
+
+    const candidateSources: string[] = [];
+    const maybePush = (value: unknown): void => {
+      if (typeof value === 'string' && value.trim()) candidateSources.push(value.trim());
+    };
+    maybePush(normalized.url);
+    maybePush(normalized.base_url);
+    maybePush(normalized.app_url);
+    maybePush(normalized.text);
+    maybePush(data?.url);
+    maybePush(data?.base_url);
+    maybePush(data?.app_url);
+    maybePush(data?.text);
+
+    for (const source of candidateSources) {
+      const token = this.extractBitableAppToken(source);
+      if (!token) continue;
+      normalized.app_token = token;
+      if (data) {
+        data.app_token = token;
+        normalized.data = data;
+      }
+      break;
+    }
+
+    return normalized;
+  }
+
+  private extractBitableAppToken(text: string): string | null {
+    const basePathMatch = text.match(/\/base\/([a-zA-Z0-9]+)/);
+    if (basePathMatch?.[1]?.startsWith('basc')) return basePathMatch[1];
+
+    const genericMatch = text.match(/\b(basc[a-zA-Z0-9]{8,})\b/);
+    if (genericMatch?.[1]) return genericMatch[1];
+
+    return null;
+  }
+
   private formatToolError(rawText: string): string {
     if (!rawText) return 'Unknown tool error';
 
@@ -233,6 +284,15 @@ export class ToolExecutor {
       if (scopes.length > 0) {
         return `Missing required scope(s): ${scopes.join(', ')}. Ask a Lark admin to grant these scopes and re-authorize the app.`;
       }
+    }
+
+    if (/app[_\s-]?token/i.test(message) && /(invalid|illegal|format|not found|not exist)/i.test(message)) {
+      return 'Invalid Bitable app_token. Provide a Base URL containing /base/{app_token} (starts with "basc"), or pass app_token directly.';
+    }
+
+    if (/(access denied|forbidden|no permission|insufficient permission|not shared)/i.test(message) &&
+      /(bitable|base|table|record|app_token)/i.test(message)) {
+      return 'Cannot access this Bitable Base. Share the Base with the bot app and ensure Bitable read scopes are granted.';
     }
 
     if (code !== undefined) {
