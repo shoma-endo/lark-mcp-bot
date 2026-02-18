@@ -88,6 +88,8 @@ export class ToolExecutor {
         throw new ToolExecutionError(`Tool ${toolName} not found`, toolName);
       }
 
+      this.validateRequiredParameters(tool, parameters);
+
       const result = await larkOapiHandler(this.larkClient, parameters, { tool: tool as any }) as MCPToolResult;
 
       if (result.isError) {
@@ -134,5 +136,22 @@ export class ToolExecutor {
   buildMutationResultLinks(toolName: string, resultText: string): string[] {
     if (!this.isMutationTool(toolName)) return [];
     return this.extractUrls(resultText);
+  }
+
+  private validateRequiredParameters(tool: MCPTool, parameters: Record<string, unknown>): void {
+    const required = (tool.schema?.required || []).filter((key): key is string => typeof key === 'string');
+    if (required.length === 0) return;
+
+    const missing = required.filter((key) => {
+      const value = parameters[key];
+      if (value === undefined || value === null) return true;
+      if (typeof value === 'string' && value.trim() === '') return true;
+      if (Array.isArray(value) && value.length === 0) return true;
+      return false;
+    });
+
+    if (missing.length > 0) {
+      throw new ValidationError(`Missing required parameters: ${missing.join(', ')}`, missing.join(', '));
+    }
   }
 }

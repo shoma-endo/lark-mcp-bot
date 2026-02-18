@@ -127,13 +127,7 @@ export class MessageProcessor {
     for (const toolCall of toolCalls) {
       const functionName = toolCall.function.name;
       const rawArgs = toolCall.function.arguments;
-      let functionArgs: Record<string, unknown>;
-      try {
-        functionArgs = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : rawArgs;
-      } catch (parseError) {
-        logger.warn(`Failed to parse tool arguments for ${functionName}`, context, parseError as Error, { rawArgs });
-        functionArgs = {};
-      }
+      const functionArgs = this.parseToolArguments(rawArgs, functionName, context);
 
       const result = await this.toolExecutor.executeToolCall(functionName, functionArgs);
       
@@ -252,6 +246,9 @@ export class MessageProcessor {
 利用可能なツール:
 ${toolDocs}
 
+重要: tool call の arguments は必ず厳密なJSON objectを出力してください。XML風タグ（<tool_call>, <arg_value>）や key=value 連結形式は使用禁止です。
+例: calendar.v4.freebusy.list の arguments は {"time_min":"2025-02-18T00:00:00+09:00","time_max":"2025-02-25T00:00:00+09:00","user_ids":["me"]} のようなJSONにしてください。
+
 日本語で丁寧に答えてください。ツールを実行する必要がある場合は、適切なツールを選択してください。Markdown記法や記号装飾（例: **, #）は使わず、プレーンテキストで回答してください。`;
   }
 
@@ -260,5 +257,75 @@ ${toolDocs}
       .replace(/\*\*/g, '')
       .replace(/^#{1,6}\s*/gm, '')
       .trim();
+  }
+
+  private parseToolArguments(rawArgs: unknown, functionName: string, context: LogContext): Record<string, unknown> {
+    if (rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)) {
+      return rawArgs as Record<string, unknown>;
+    }
+    if (typeof rawArgs !== 'string') {
+      logger.warn(`Tool arguments are not an object/string for ${functionName}`, context, undefined, { rawArgs });
+      return {};
+    }
+
+    const trimmed = rawArgs.trim();
+    if (!trimmed) return {};
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // fallback below
+    }
+
+    const functionNamePattern = functionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const normalized = trimmed
+      .replace(/<\/?[^>]+>/g, '')
+      .replace(new RegExp(`^${functionNamePattern}:`), '')
+      .trim();
+
+    try {
+      const parsed = JSON.parse(normalized);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // fallback below
+    }
+
+    const kvParsed = this.parseLegacyKeyValueArgs(normalized);
+    if (kvParsed) return kvParsed;
+
+    logger.warn(`Failed to parse tool arguments for ${functionName}`, context, undefined, { rawArgs });
+    return {};
+  }
+
+  private parseLegacyKeyValueArgs(input: string): Record<string, unknown> | null {
+    const source = input.replace(/:+$/, '');
+    const matches = [...source.matchAll(/([a-zA-Z0-9_]+)=([\s\S]*?)(?=:[a-zA-Z0-9_]+=|$)/g)];
+    if (matches.length === 0) return null;
+
+    const parsed: Record<string, unknown> = {};
+    for (const [, key, rawValue] of matches) {
+      const value = rawValue.trim().replace(/:+$/, '');
+      if (!value) continue;
+
+      if (key.endsWith('_ids')) {
+        parsed[key] = value.split(',').map(v => v.trim()).filter(Boolean);
+        continue;
+      }
+
+      if (value === 'true' || value === 'false') {
+        parsed[key] = value === 'true';
+        continue;
+      }
+
+      const num = Number(value);
+      parsed[key] = Number.isFinite(num) && /^-?\d+(\.\d+)?$/.test(value) ? num : value;
+    }
+
+    return Object.keys(parsed).length > 0 ? parsed : null;
   }
 }

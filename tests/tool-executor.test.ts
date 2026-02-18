@@ -38,6 +38,19 @@ describe('ToolExecutor', () => {
           name: 'disabled_tool',
           description: 'A disabled tool',
           schema: { type: 'object', properties: {} }
+        },
+        {
+          name: 'calendar.v4.freebusy.list',
+          description: 'Freebusy lookup',
+          schema: {
+            type: 'object',
+            properties: {
+              time_min: { type: 'string' },
+              time_max: { type: 'string' },
+              user_ids: { type: 'array' },
+            },
+            required: ['time_min', 'time_max', 'user_ids'],
+          }
         }
       ]),
     };
@@ -48,14 +61,15 @@ describe('ToolExecutor', () => {
     config.disabledTools = ['disabled_tool'];
     const tools = mockMcpTool.getTools();
     const filtered = toolExecutor.filterMcpTools(tools);
-    expect(filtered.length).toBe(2);
+    expect(filtered.length).toBe(3);
     expect(filtered.find(t => t.name === 'disabled_tool')).toBeUndefined();
     config.disabledTools = []; // Reset
   });
 
   it('should convert MCP tools to functions', () => {
+    config.disabledTools = [];
     const functions = toolExecutor.convertMcpToolsToFunctions();
-    expect(functions.length).toBe(3);
+    expect(functions.length).toBe(4);
     expect(functions[0].function.name).toBe('test_tool');
     expect(functions[0].function.parameters.type).toBe('object');
   });
@@ -88,6 +102,15 @@ describe('ToolExecutor', () => {
     const result = await toolExecutor.executeToolCall('', {});
     expect(result).toContain('Error');
     expect(result).toContain('Invalid tool name');
+  });
+
+  it('should validate required tool parameters before execution', async () => {
+    const result = await toolExecutor.executeToolCall('calendar.v4.freebusy.list', {
+      time_min: '2025-02-18T00:00:00+09:00',
+    });
+    expect(result).toContain('Error');
+    expect(result).toContain('Missing required parameters');
+    expect(larkUtils.larkOapiHandler).not.toHaveBeenCalled();
   });
 
   it('should handle tool execution failure from handler', async () => {

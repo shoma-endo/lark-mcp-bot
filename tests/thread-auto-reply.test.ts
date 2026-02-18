@@ -257,5 +257,50 @@ describe('MessageProcessor - Thread Auto-Reply', () => {
       expect(mockLLMService.createCompletion).toHaveBeenCalledTimes(2);
       expect(mockToolExecutor.executeToolCall).toHaveBeenCalledWith('test.tool.create', { name: 'test' });
     });
+
+    it('should normalize malformed tool argument string into object', async () => {
+      mockLLMService.createCompletion
+        .mockResolvedValueOnce({
+          choices: [{
+            message: {
+              content: '',
+              tool_calls: [{
+                id: 'call-legacy',
+                type: 'function',
+                function: {
+                  name: 'calendar.v4.freebusy.list',
+                  arguments: '<tool_call>calendar.v4.freebusy.list:time_min=2025-02-18T00:00:00+09:00:time_max=2025-02-25T00:00:00+09:00:user_ids=me:</arg_value>'
+                }
+              }]
+            }
+          }]
+        })
+        .mockResolvedValueOnce({
+          choices: [{
+            message: {
+              content: '予定を確認しました。'
+            }
+          }]
+        });
+
+      mockToolExecutor.executeToolCall.mockResolvedValueOnce('{"ok": true}');
+
+      const event: any = {
+        message: {
+          content: JSON.stringify({ text: '予定を確認して' }),
+          chat_type: 'p2p',
+          message_id: 'msg133'
+        },
+        sender: { sender_id: { user_id: 'user123' } }
+      };
+
+      await processor.process(event);
+
+      expect(mockToolExecutor.executeToolCall).toHaveBeenCalledWith('calendar.v4.freebusy.list', {
+        time_min: '2025-02-18T00:00:00+09:00',
+        time_max: '2025-02-25T00:00:00+09:00',
+        user_ids: ['me'],
+      });
+    });
   });
 });
