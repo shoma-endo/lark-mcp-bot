@@ -16,17 +16,17 @@ import { ToolExecutor } from './tool-executor.js';
 import { MessageProcessor } from './message-processor.js';
 
 /**
- * Helper function to send text message via Lark API
+ * Helper function to send reply message via Lark API
  */
-async function sendTextMessage(client: lark.Client, chatId: string, text: string): Promise<void> {
-  await client.im.message.create({
-    params: {
-      receive_id_type: 'chat_id',
+async function sendReplyMessage(client: lark.Client, messageId: string, text: string): Promise<void> {
+  await client.im.message.reply({
+    path: {
+      message_id: messageId,
     },
     data: {
-      receive_id: chatId,
       content: JSON.stringify({ text }),
       msg_type: 'text',
+      reply_in_thread: true,
     },
   });
 }
@@ -111,8 +111,8 @@ export class LarkMCPBot {
       }
 
       const responseText = await this.messageProcessor.process(data);
-      if (responseText) {
-        await this.sendMessageWithRetry(chatId, responseText, context);
+      if (responseText && message.message_id) {
+        await this.sendMessageWithRetry(message.message_id, responseText, context);
       }
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
@@ -180,12 +180,12 @@ export class LarkMCPBot {
   /**
    * Send message with retry logic and exponential backoff
    */
-  private async sendMessageWithRetry(chatId: string, text: string, context: LogContext, maxRetries = 3): Promise<void> {
+  private async sendMessageWithRetry(messageId: string, text: string, context: LogContext, maxRetries = 3): Promise<void> {
     let lastError: Error | undefined;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        await sendTextMessage(this.larkClient, chatId, text);
+        await sendReplyMessage(this.larkClient, messageId, text);
         if (attempt > 0) logger.info(`Sent after retry`, context, { attempt });
         return;
       } catch (error) {
@@ -198,7 +198,7 @@ export class LarkMCPBot {
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
-    throw new LarkAPIError(`Failed after ${maxRetries + 1} attempts: ${lastError?.message}`, lastError);
+    throw new LarkAPIError(`Failed after ${maxRetries + 1} attempts`, lastError);
   }
 
   private isRetryableError(error: Error): boolean {

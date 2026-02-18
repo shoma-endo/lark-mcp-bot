@@ -12,6 +12,7 @@ vi.mock('@larksuiteoapi/node-sdk', () => {
     im: {
       message: {
         create: vi.fn().mockResolvedValue({ data: { message_id: 'msg123' } }),
+        reply: vi.fn().mockResolvedValue({ data: { message_id: 'reply123' } }),
       },
     },
   };
@@ -267,8 +268,8 @@ describe('LarkMCPBot', () => {
       const history = await storage.getHistory('chat-123');
       expect(history.length).toBeGreaterThan(0);
 
-      // Verify message was sent
-      expect(bot.larkClient.im.message.create).toHaveBeenCalled();
+      // Verify reply message was sent
+      expect(bot.larkClient.im.message.reply).toHaveBeenCalled();
 
       consoleSpy.mockRestore();
     });
@@ -391,8 +392,8 @@ describe('LarkMCPBot', () => {
       await (bot as any).handleMessageReceive(messageEvent);
 
       // Verify error message was sent
-      expect(bot.larkClient.im.message.create).toHaveBeenCalled();
-      const lastCall = (bot.larkClient.im.message.create as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(bot.larkClient.im.message.reply).toHaveBeenCalled();
+      const lastCall = (bot.larkClient.im.message.reply as ReturnType<typeof vi.fn>).mock.calls[0];
       const content = JSON.parse(lastCall[0].data.content);
       // Expectations should match the error message format from LLM or fallback
       expect(content.text).toBeTruthy();
@@ -472,14 +473,14 @@ describe('LarkMCPBot', () => {
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-      (bot.larkClient.im.message.create as ReturnType<typeof vi.fn>)
+      (bot.larkClient.im.message.reply as ReturnType<typeof vi.fn>)
         .mockRejectedValueOnce(new Error('Timeout error'))
         .mockResolvedValueOnce({ data: { message_id: 'msg-new' } });
 
-      await (bot as any).sendMessageWithRetry('chat-123', 'Hello', { chatId: 'chat-123' });
+      await (bot as any).sendMessageWithRetry('chat-123', 'Hello', { chatId: 'chat-123' }, 1);
 
       // Should have been called twice (1 failure + 1 success)
-      expect(bot.larkClient.im.message.create).toHaveBeenCalledTimes(2);
+      expect(bot.larkClient.im.message.reply).toHaveBeenCalledTimes(2);
 
       consoleSpy.mockRestore();
       warnSpy.mockRestore();
@@ -493,15 +494,15 @@ describe('LarkMCPBot', () => {
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-      (bot.larkClient.im.message.create as ReturnType<typeof vi.fn>)
-        .mockRejectedValue(new Error('Timeout error'));
+      (bot.larkClient.im.message.reply as ReturnType<typeof vi.fn>)
+        .mockRejectedValue(new Error('timeout error'));
 
       await expect(
         (bot as any).sendMessageWithRetry('chat-123', 'Hello', { chatId: 'chat-123' }, 2)
       ).rejects.toThrow(LarkAPIError);
 
       // Should have been called 3 times (initial + 2 retries)
-      expect(bot.larkClient.im.message.create).toHaveBeenCalledTimes(3);
+      expect(bot.larkClient.im.message.reply).toHaveBeenCalledTimes(3);
 
       consoleSpy.mockRestore();
       warnSpy.mockRestore();
@@ -525,7 +526,7 @@ describe('LarkMCPBot', () => {
       await storage.setTimestamp('chat-123', Date.now());
 
       // Reset mock to ensure success
-      (bot.larkClient.im.message.create as ReturnType<typeof vi.fn>)
+      (bot.larkClient.im.message.reply as ReturnType<typeof vi.fn>)
         .mockResolvedValue({ data: { message_id: 'msg-new' } });
 
       const messageEvent = {
