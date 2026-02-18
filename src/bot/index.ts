@@ -120,13 +120,18 @@ export class LarkMCPBot {
         await this.storage.cleanup(this.CONVERSATION_TTL_MS);
       }
 
-      // DO NOT await the processing to respond to Lark within 3 seconds
+      // In Vercel serverless runtime, fire-and-forget async work may be terminated
+      // once the request lifecycle ends, so we await processing there.
       const promise = this.processMessageAsync(data, context).catch(err => {
         logger.error(`Async message processing failed`, context, err);
       }).finally(() => {
         this.pendingPromises.delete(promise);
       });
       this.pendingPromises.add(promise);
+
+      if (this.shouldAwaitMessageProcessing()) {
+        await promise;
+      }
 
     } catch (error) {
       logger.error(`Error in handleMessageReceive`, context, error instanceof Error ? error : new Error(String(error)));
@@ -255,6 +260,14 @@ export class LarkMCPBot {
     
     const retryableIndicators = ['timeout', 'econnreset', 'enotfound', '500', '502', '503', '504', '429', 'rate limit'];
     return retryableIndicators.some(ind => msg.includes(ind));
+  }
+
+  /**
+   * In serverless runtimes such as Vercel, background async tasks are not guaranteed
+   * to continue after the handler returns.
+   */
+  private shouldAwaitMessageProcessing(): boolean {
+    return process.env.VERCEL === '1' || !!process.env.VERCEL_ENV;
   }
 
   getEventDispatcher(): lark.EventDispatcher { return this.eventDispatcher; }
