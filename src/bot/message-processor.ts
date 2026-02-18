@@ -128,6 +128,7 @@ export class MessageProcessor {
     intentPlan: IntentPlan
   ): Promise<string> {
     const mutationResultUrls = new Set<string>();
+    const functions = this.toolExecutor.convertMcpToolsToFunctions();
     const executeToolCalls = async (calls: any[]): Promise<void> => {
       for (const toolCall of calls) {
         const functionName = toolCall.function.name;
@@ -175,7 +176,10 @@ export class MessageProcessor {
         ...history.slice(-20),
       ];
 
-      const followUpCompletion = await this.llmService.createCompletion(followUpMessages as ConversationMessage[]);
+      const followUpCompletion = await this.llmService.createCompletion(
+        followUpMessages as ConversationMessage[],
+        functions
+      );
       const followUpMessage = followUpCompletion.choices[0]?.message;
       if (!followUpMessage) {
         logger.warn('LLM returned no follow-up response choices', context, undefined, { attempt });
