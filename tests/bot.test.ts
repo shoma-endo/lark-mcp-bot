@@ -263,6 +263,9 @@ describe('LarkMCPBot', () => {
 
       await (bot as any).handleMessageReceive(messageEvent);
 
+      // Deterministically wait for the async processing to finish
+      await bot.waitForPendingProcessing();
+
       // Verify conversation was stored
       const storage = bot.getStorage();
       const history = await storage.getHistory('chat-123');
@@ -355,6 +358,9 @@ describe('LarkMCPBot', () => {
 
       await (bot as any).handleMessageReceive(messageEvent);
 
+      // Deterministically wait for the async processing to finish
+      await bot.waitForPendingProcessing();
+
       // Verify OpenAI was called twice (initial + follow-up)
       expect(mockOpenAI.chat.completions.create).toHaveBeenCalledTimes(2);
 
@@ -391,6 +397,9 @@ describe('LarkMCPBot', () => {
 
       await (bot as any).handleMessageReceive(messageEvent);
 
+      // Deterministically wait for the async processing to finish
+      await bot.waitForPendingProcessing();
+
       // Verify error message was sent
       expect(bot.larkClient.im.message.reply).toHaveBeenCalled();
       const lastCall = (bot.larkClient.im.message.reply as ReturnType<typeof vi.fn>).mock.calls[0];
@@ -424,6 +433,9 @@ describe('LarkMCPBot', () => {
 
       await (bot as any).handleMessageReceive(messageEvent);
 
+      // Deterministically wait for the async processing to finish
+      await bot.waitForPendingProcessing();
+
       // Verify conversation has cleaned text
       const storage = bot.getStorage();
       const history = await storage.getHistory('chat-123');
@@ -454,6 +466,9 @@ describe('LarkMCPBot', () => {
       };
 
       await (bot as any).handleMessageReceive(messageEvent);
+
+      // Deterministically wait for the async processing to finish
+      await bot.waitForPendingProcessing();
 
       // Verify conversation has the plain text
       const storage = bot.getStorage();
@@ -497,8 +512,11 @@ describe('LarkMCPBot', () => {
       (bot.larkClient.im.message.reply as ReturnType<typeof vi.fn>)
         .mockRejectedValue(new Error('timeout error'));
 
+      // Re-stub for this specific test to ensure we catch the error from sendMessageWithRetry
+      // sendMessageWithRetry is now called async within handleMessageReceive, 
+      // but this test calls sendMessageWithRetry directly, which is still an async function returning a promise.
       await expect(
-        (bot as any).sendMessageWithRetry('chat-123', 'Hello', { chatId: 'chat-123' }, 2)
+        (bot as any).sendMessageWithRetry('msg-123', 'Hello', { chatId: 'chat-123' }, undefined, 2)
       ).rejects.toThrow(LarkAPIError);
 
       // Should have been called 3 times (initial + 2 retries)
@@ -544,6 +562,9 @@ describe('LarkMCPBot', () => {
       };
 
       await (bot as any).handleMessageReceive(messageEvent);
+
+      // Wait for async processing
+      await new Promise(r => setTimeout(r, 100));
 
       // History should be trimmed (25 + 1 user + 1 assistant = 27, then trimmed to 20)
       const updatedHistory = await storage.getHistory('chat-123');

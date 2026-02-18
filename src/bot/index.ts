@@ -18,7 +18,7 @@ import { MessageProcessor } from './message-processor.js';
 /**
  * Helper function to send reply message via Lark API
  */
-async function sendReplyMessage(client: lark.Client, messageId: string, text: string): Promise<void> {
+async function sendReplyMessage(client: lark.Client, messageId: string, text: string, uuid?: string): Promise<void> {
   await client.im.message.reply({
     path: {
       message_id: messageId,
@@ -27,6 +27,7 @@ async function sendReplyMessage(client: lark.Client, messageId: string, text: st
       content: JSON.stringify({ text }),
       msg_type: 'text',
       reply_in_thread: true,
+      uuid,
     },
   });
 }
@@ -52,6 +53,7 @@ export class LarkMCPBot {
   private lastCleanupTime: number = Date.now();
 
   private processedMessageIds: Map<string, number> = new Map();
+  private pendingPromises: Set<Promise<any>> = new Set();
 
   constructor(storage?: ConversationStorage) {
     this.larkClient = new lark.Client({
@@ -93,37 +95,82 @@ export class LarkMCPBot {
 
   /**
    * Handle incoming message event by delegating to MessageProcessor
+   * Optimized for Lark's 3-second webhook timeout using non-blocking execution.
    */
   private async handleMessageReceive(data: LarkMessageEvent): Promise<void> {
-    const { message, sender } = data;
+    const { message, sender, event_id } = data;
     const chatId = message.chat_id || '';
-    const context: LogContext = { chatId, messageId: message.message_id };
+    const messageId = message.message_id || '';
+    const context: LogContext = { chatId, messageId, eventId: event_id };
 
     try {
       if (sender?.sender_type === 'app') return;
-      if (!(await this.shouldProcessMessage(message.message_id, chatId))) return;
+      
+      // Use event_id for more robust idempotency check if available, fallback to message_id
+      const idToDedup = event_id || messageId;
+      if (!(await this.shouldProcessMessage(idToDedup, chatId))) {
+        logger.debug(`Skipping duplicate message/event`, context);
+        return;
+      }
 
-      // Probabilistic cleanup with time-based fallback to reduce overhead
+      // Proactive cleanup
       const now = Date.now();
       if (Math.random() < 0.01 || now - this.lastCleanupTime > this.CLEANUP_INTERVAL_MS) {
         this.lastCleanupTime = now;
         await this.storage.cleanup(this.CONVERSATION_TTL_MS);
       }
 
+      // DO NOT await the processing to respond to Lark within 3 seconds
+      const promise = this.processMessageAsync(data, context).catch(err => {
+        logger.error(`Async message processing failed`, context, err);
+      }).finally(() => {
+        this.pendingPromises.delete(promise);
+      });
+      this.pendingPromises.add(promise);
+
+    } catch (error) {
+      logger.error(`Error in handleMessageReceive`, context, error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+
+  /**
+   * Actual message processing logic executed asynchronously
+   */
+  private async processMessageAsync(data: LarkMessageEvent, context: LogContext): Promise<void> {
+    const { message, event_id } = data;
+    const messageId = message.message_id || '';
+    const chatId = message.chat_id || '';
+
+    try {
       const responseText = await this.messageProcessor.process(data);
-      if (responseText && message.message_id) {
-        await this.sendMessageWithRetry(message.message_id, responseText, context);
+      if (responseText && messageId) {
+        // Use event_id as uuid for Lark API idempotency
+        await this.sendMessageWithRetry(messageId, responseText, context, event_id);
       }
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      logger.error(`Error handling message`, context, err);
+      logger.error(`Error processing message`, context, err);
 
       try {
+        if (!messageId) {
+          logger.warn(`Cannot send error reply: missing messageId`, context);
+          return;
+        }
         const errorReply = await this.llmService.generateLlmErrorReply('', err);
-        await this.sendMessageWithRetry(chatId, errorReply, context);
+        await this.sendMessageWithRetry(messageId, errorReply, context, event_id ? `${event_id}_err` : undefined);
       } catch (sendError) {
         logger.error(`Failed to send error message`, context, sendError as Error);
       }
+    }
+  }
+
+  /**
+   * Wait for all pending async message processing tasks to complete.
+   * Useful for deterministic testing.
+   */
+  public async waitForPendingProcessing(): Promise<void> {
+    while (this.pendingPromises.size > 0) {
+      await Promise.all(Array.from(this.pendingPromises));
     }
   }
 
@@ -180,12 +227,12 @@ export class LarkMCPBot {
   /**
    * Send message with retry logic and exponential backoff
    */
-  private async sendMessageWithRetry(messageId: string, text: string, context: LogContext, maxRetries = 3): Promise<void> {
+  private async sendMessageWithRetry(messageId: string, text: string, context: LogContext, uuid?: string, maxRetries = 3): Promise<void> {
     let lastError: Error | undefined;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        await sendReplyMessage(this.larkClient, messageId, text);
+        await sendReplyMessage(this.larkClient, messageId, text, uuid);
         if (attempt > 0) logger.info(`Sent after retry`, context, { attempt });
         return;
       } catch (error) {
