@@ -8,6 +8,7 @@ import { logger } from '../utils/logger.js';
 import { LLMService } from './llm-service.js';
 import { ToolExecutor } from './tool-executor.js';
 import { ConversationStorage } from '../storage/interface.js';
+import { config } from '../config.js';
 import {
   IntentPlanner,
   IntentPlannerLike,
@@ -164,14 +165,7 @@ export class MessageProcessor {
     history.push({
       role: 'assistant',
       content: assistantMessage.content || '',
-      tool_calls: toolCalls.map(tc => ({
-        id: tc.id,
-        type: 'function',
-        function: {
-          name: tc.function.name,
-          arguments: tc.function.arguments,
-        },
-      })),
+      tool_calls: toolCalls as ConversationMessage['tool_calls'],
     });
 
     // Execute all tool calls in this turn
@@ -200,14 +194,7 @@ export class MessageProcessor {
         history.push({
           role: 'assistant',
           content: followUpMessage.content || '',
-          tool_calls: followUpToolCalls.map(tc => ({
-            id: tc.id,
-            type: 'function',
-            function: {
-              name: tc.function.name,
-              arguments: tc.function.arguments,
-            },
-          })),
+          tool_calls: followUpToolCalls as ConversationMessage['tool_calls'],
         });
         await executeToolCalls(followUpToolCalls);
         continue;
@@ -656,12 +643,31 @@ ${plannerHints}
     const trimmed = rawArgs.trim();
     if (!trimmed) return {};
 
+    // Check if JSON is potentially truncated (unbalanced braces)
+    const openBraces = (trimmed.match(/\{/g) || []).length;
+    const closeBraces = (trimmed.match(/\}/g) || []).length;
+    if (openBraces > closeBraces) {
+      logger.warn(`Tool arguments appear truncated for ${functionName}: unbalanced braces`, context, undefined, {
+        rawArgsPreview: trimmed.length > 500 ? trimmed.substring(0, 500) + '...' : trimmed,
+        rawArgsLength: trimmed.length,
+        openBraces,
+        closeBraces,
+        missingClosingBraces: openBraces - closeBraces,
+      });
+      logger.warn(`This may indicate max_tokens limit in LLMService createCompletion. Current max_tokens: ${config.glmMaxTokens}`, context);
+    }
+
     try {
       const parsed = JSON.parse(trimmed);
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         return parsed as Record<string, unknown>;
       }
-    } catch {
+    } catch (error) {
+      logger.warn(`JSON.parse failed for ${functionName}, trying fallback parsers`, context, undefined, {
+        rawArgsPreview: trimmed.length > 500 ? trimmed.substring(0, 500) + '...' : trimmed,
+        rawArgsLength: trimmed.length,
+        parseError: error instanceof Error ? error.message : String(error),
+      });
       // fallback below
     }
 
@@ -686,7 +692,11 @@ ${plannerHints}
     const kvParsed = this.parseLegacyKeyValueArgs(normalized);
     if (kvParsed) return kvParsed;
 
-    logger.warn(`Failed to parse tool arguments for ${functionName}`, context, undefined, { rawArgs });
+    logger.error(`Failed to parse tool arguments for ${functionName}, returning empty object`, context, undefined, {
+      rawArgs: trimmed.length > 1000 ? trimmed.substring(0, 1000) + '...' : trimmed,
+      rawArgsLength: trimmed.length,
+      functionName,
+    });
     return {};
   }
 

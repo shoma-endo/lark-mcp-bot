@@ -34,7 +34,7 @@ export class LLMService {
         messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
         tools: tools as OpenAI.Chat.ChatCompletionTool[],
         temperature: 0.7,
-        max_tokens: 2000,
+        max_tokens: config.glmMaxTokens,
       });
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
@@ -69,7 +69,7 @@ export class LLMService {
           },
         ],
         temperature: 0.2,
-        max_tokens: 300,
+        max_tokens: Math.min(300, config.glmMaxTokens),
       });
 
       const text = completion.choices[0]?.message?.content?.trim();
