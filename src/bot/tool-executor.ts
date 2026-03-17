@@ -40,9 +40,12 @@ export class ToolExecutor {
    * Convert MCP tools to GLM function calling format.
    *
    * The MCP tool schema is a plain object of Zod schemas keyed by `data`, `path`, `useUAT`.
-   * `schema.properties` is therefore undefined — the LLM would receive an empty parameter list.
-   * To fix this, we parse the tool's URL template for `:param` placeholders and expose them
-   * as required top-level string properties so the LLM knows it must supply them.
+   * We extract:
+   *   1. Path param names from the URL template (`:param` placeholders) → required string params
+   *   2. Data body fields from the `data` Zod schema → flat params LLM can pass directly
+   *
+   * On execution, `normalizeToolParameters` restructures flat params back into
+   * the `{ path: {...}, data: {...} }` shape the SDK expects.
    */
   convertMcpToolsToFunctions(): FunctionDefinition[] {
     const allMcpTools = this.mcpTool.getTools() as MCPTool[];
@@ -52,13 +55,19 @@ export class ToolExecutor {
       const { schema } = tool;
       const rawTool = tool as unknown as Record<string, unknown>;
 
-      // Extract path param names from URL template, e.g. /apps/:app_token/tables → ['app_token']
+      // 1. Extract path param names from URL template, e.g. /apps/:app_token/tables → ['app_token']
       const urlTemplate = rawTool['path'] as string | undefined;
       const pathParamNames = (urlTemplate?.match(/:([^/]+)/g) ?? []).map(p => p.slice(1));
 
-      const properties: Record<string, unknown> = { ...(schema.properties ?? {}) };
-      const required: string[] = [...(schema.required ?? [])];
+      // 2. Extract data body fields from the Zod schema
+      const rawSchema = schema as unknown as Record<string, unknown>;
+      const { properties: dataProps, required: dataReq } =
+        this.extractZodObjectProperties(rawSchema['data']);
 
+      const properties: Record<string, unknown> = { ...dataProps };
+      const required: string[] = [...dataReq];
+
+      // Path params take precedence and are always required
       for (const param of pathParamNames) {
         if (!properties[param]) {
           properties[param] = { type: 'string', description: `Required path parameter: ${param}` };
@@ -81,6 +90,71 @@ export class ToolExecutor {
         },
       };
     });
+  }
+
+  /**
+   * Extract JSON schema properties from a Zod object schema (or Optional/Nullable wrapper).
+   * Only handles primitive types and simple objects — enough for LLM function calling hints.
+   */
+  private extractZodObjectProperties(zodSchema: unknown): {
+    properties: Record<string, unknown>;
+    required: string[];
+  } {
+    const shape = this.getZodObjectShape(zodSchema);
+    if (!shape) return { properties: {}, required: [] };
+
+    const properties: Record<string, unknown> = {};
+    const required: string[] = [];
+
+    for (const [key, fieldZod] of Object.entries(shape)) {
+      const result = this.zodFieldToJsonSchemaProp(fieldZod);
+      if (result) {
+        properties[key] = result.schema;
+        if (!result.isOptional) required.push(key);
+      }
+    }
+
+    return { properties, required };
+  }
+
+  private getZodObjectShape(zodSchema: unknown): Record<string, unknown> | null {
+    const z = zodSchema as Record<string, any>;
+    if (!z?._def) return null;
+    const tn: string = z._def.typeName;
+    if (tn === 'ZodOptional' || tn === 'ZodNullable') {
+      return this.getZodObjectShape(z._def.innerType);
+    }
+    if (tn === 'ZodObject') {
+      return (z._def.shape?.() as Record<string, unknown>) ?? null;
+    }
+    return null;
+  }
+
+  private zodFieldToJsonSchemaProp(
+    fieldZod: unknown
+  ): { schema: Record<string, unknown>; isOptional: boolean } | null {
+    let z = fieldZod as Record<string, any>;
+    let isOptional = false;
+
+    while (z?._def?.typeName === 'ZodOptional' || z?._def?.typeName === 'ZodNullable') {
+      isOptional = true;
+      z = z._def.innerType;
+    }
+
+    if (!z?._def) return null;
+    const tn: string = z._def.typeName;
+    const description: string = z._def.description ?? '';
+    const base: Record<string, unknown> = description ? { description } : {};
+
+    switch (tn) {
+      case 'ZodString':  return { schema: { ...base, type: 'string' }, isOptional };
+      case 'ZodNumber':  return { schema: { ...base, type: 'number' }, isOptional };
+      case 'ZodBoolean': return { schema: { ...base, type: 'boolean' }, isOptional };
+      case 'ZodEnum':    return { schema: { ...base, type: 'string', enum: z._def.values }, isOptional };
+      case 'ZodObject':  return { schema: { ...base, type: 'object' }, isOptional };
+      case 'ZodArray':   return { schema: { ...base, type: 'array' }, isOptional };
+      default:           return null;
+    }
   }
 
   /**
@@ -406,6 +480,21 @@ export class ToolExecutor {
         existingData.default_view_name = normalized.default_view_name;
       }
       delete normalized.default_view_name;
+    }
+
+    // --- Step 4: Move remaining top-level body params into data ---
+    // After Steps 2 & 3, any remaining top-level keys that aren't structural/path params
+    // are body fields the LLM passed flat (e.g. field_name, type, ui_type, name, property).
+    const BITABLE_STRUCTURAL_KEYS = new Set([
+      'path', 'data', 'params', 'useUAT',
+      'url', 'base_url', 'app_url', 'text', 'content', 'link',
+      'doc_url', 'document_url', 'sheet_url', 'wiki_url',
+    ]);
+    for (const key of Object.keys(normalized)) {
+      if (!BITABLE_STRUCTURAL_KEYS.has(key)) {
+        existingData[key] = normalized[key];
+        delete normalized[key];
+      }
     }
 
     if (Object.keys(existingData).length > 0) normalized.data = existingData;
