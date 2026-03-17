@@ -88,7 +88,7 @@ const handlers: Record<string, EventHandler> = {
 
 async function main(): Promise<void> {
   console.log('='.repeat(60));
-  console.log('Webhook Event Router - Miyabi Framework');
+  console.log('Webhook Event Router');
   console.log('='.repeat(60));
 
   if (!eventType) {

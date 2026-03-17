@@ -49,13 +49,5 @@
       "disabled": false,
       "description": "Context Engineering - AI-powered context analysis, optimization, and semantic search"
     },
-    "miyabi": {
-      "command": "node",
-      "args": [
-        ".claude/mcp-servers/miyabi-integration.js"
-      ],
-      "disabled": false,
-      "description": "Miyabi CLI統合 - プロジェクト作成、Agent実行、自動化機能"
-    }
   }
 }

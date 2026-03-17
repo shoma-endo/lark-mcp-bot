@@ -47,10 +47,10 @@ jobs:
             fi
           fi
 
-          # Check if comment contains /agent command or @miyabi mention
+          # Check if comment contains /agent command
           if [ "${{ github.event_name }}" = "issue_comment" ]; then
             COMMENT="${{ github.event.comment.body }}"
-            if echo "$COMMENT" | grep -Eq "^/agent|@miyabi"; then
+            if echo "$COMMENT" | grep -Eq "^/agent"; then
               SHOULD_EXECUTE="true"
               ISSUE_NUMBER="${{ github.event.issue.number }}"
               echo "Comment triggered agent execution for issue #${ISSUE_NUMBER}"

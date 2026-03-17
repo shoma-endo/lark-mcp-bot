@@ -21,9 +21,6 @@
 ├── commands/                    # カスタムスラッシュコマンド
 │   ├── test.md                  # /test - テスト実行
 │   ├── agent-run.md             # /agent-run - Agent実行
-│   ├── miyabi-agent.md          # /miyabi-agent - Miyabi Agent実行
-│   ├── miyabi-status.md         # /miyabi-status - ステータス確認
-│   ├── miyabi-init.md           # /miyabi-init - プロジェクト作成
 │   ├── deploy.md                # /deploy - デプロイ
 │   ├── verify.md                # /verify - 動作確認
 │   ├── security-scan.md         # /security-scan - セキュリティスキャン
@@ -118,44 +115,18 @@ npm run agents:parallel:exec -- --help
 
 ## 🔌 MCP Servers
 
-Miyabiは **6つのMCPサーバー** を統合し、Claude Codeの機能を拡張しています。
-
 ### 設定ファイル
-`.claude/mcp.json` に全MCPサーバーが定義されています。
+`.claude/mcp.json` にMCPサーバーが定義されています。
 
 ### 利用可能なMCPサーバー
 
 | MCP Server | 機能 | 提供ツール |
 |------------|------|-----------|
-| **Miyabi Integration** | Miyabi CLI統合 | `miyabi__init`, `miyabi__agent_run`, `miyabi__status`, `miyabi__auto` など |
 | **IDE Integration** | VS Code診断、Jupyter実行 | `mcp__ide__getDiagnostics`, `mcp__ide__executeCode` |
 | **GitHub Enhanced** | Issue/PR管理 | Issue操作、PR作成、Projects V2統合 |
 | **Project Context** | 依存関係情報 | package.json解析、依存グラフ |
 | **Filesystem** | ファイルアクセス | ファイル読み書き、検索 |
 | **Context Engineering** | AIコンテキスト分析・最適化 | セマンティック検索、コンテキスト最適化、品質分析 |
-
-### Miyabi Integration MCP の特徴
-
-**目的**: Claude Code内からMiyabi CLIの全機能を直接呼び出し
-
-**提供ツール**:
-- `miyabi__init` - 新規プロジェクト作成
-- `miyabi__install` - 既存プロジェクトにインストール
-- `miyabi__status` - プロジェクトステータス確認
-- `miyabi__agent_run` - Autonomous Agent実行
-- `miyabi__auto` - Water Spider全自動モード
-- `miyabi__todos` - TODOコメント自動検出
-- `miyabi__config` - 設定管理
-- `miyabi__get_status` - 軽量ステータス取得
-
-**使用例**:
-```
-あなた: "プロジェクトのステータスを確認して"
-Claude: [miyabi__get_status を自動実行]
-
-あなた: "Issue #123を処理して"
-Claude: [miyabi__agent_run({ issueNumber: 123 }) を自動実行]
-```
 
 ### Context Engineering MCP の特徴
 
@@ -301,54 +272,15 @@ ln -s ../../.claude/hooks/auto-format.sh ../../.git/hooks/pre-commit
 
 ### 新規プロジェクト作成からAgent実行まで
 
-#### 方法1: MCPツールを使う（推奨）
+#### スラッシュコマンドを使う
 
 ```
-あなた: "my-awesome-appという名前で新しいプロジェクトを作成して"
-
-Claude: [miyabi__init({ projectName: "my-awesome-app" }) を自動実行]
-
-あなた: "Issueを1つ作成して、それをAgentに処理させて"
-
-Claude:
-  1. [GitHub Issue作成]
-  2. [miyabi__agent_run を実行]
-  3. [Draft PR作成完了]
-
-完了！
-```
-
-#### 方法2: スラッシュコマンドを使う
-
-```
-/miyabi-init
-→ Claude Codeが対話的にプロジェクト名などを聞いて実行
-
-/miyabi-agent
+/agent-run
 → Claude Codeが対話的にIssue番号を聞いて実行
 ```
-
-#### 方法3: CLI直接実行
-
-```bash
-# ターミナルから実行
-npx miyabi init my-awesome-app
-cd my-awesome-app
-npx miyabi auto  # 全自動モード起動
-```
-
-## 📊 統計
-
-- **Agents**: 6種類（Coordinator + 5 Specialists）
-- **MCP Servers**: 6個
-- **Slash Commands**: 10個
-- **Hooks**: 1個
 
 ---
 
 **最終更新**: 2025-10-09
-**管理**: Miyabi Autonomous System
-
-🌸 **Miyabi** - Beauty in Autonomous Development
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

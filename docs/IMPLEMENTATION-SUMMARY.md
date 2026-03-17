@@ -307,7 +307,6 @@ DISABLED_TOOLS=
 ---
 
 **作成者**: Claude AI  
-**フレームワーク**: Miyabi Framework準拠  
 **テスト**: 65/65 passing  
 **ビルド**: Success  
 **Ready for Production**: ✅
