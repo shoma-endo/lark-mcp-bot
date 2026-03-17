@@ -75,7 +75,6 @@ export class LarkMCPBot {
       toolsOptions: {
         language: 'en',
         allowTools: [...new Set([...defaultToolNames, ...presetCalendarToolNames, ...presetTaskToolNames])] as any,
-        allowProjects: ['vc'] as any,
       },
     }, undefined);
 

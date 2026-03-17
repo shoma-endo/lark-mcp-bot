@@ -19,7 +19,7 @@ export class LLMService {
     this.openai = new OpenAI({
       apiKey: config.glmApiKey,
       baseURL: config.glmApiBaseUrl,
-      timeout: 60000, // 60 seconds timeout
+      timeout: 120000, // 120 seconds timeout
     });
   }
 
@@ -49,16 +49,11 @@ export class LLMService {
           err.message.includes('429') ||
           err.message.toLowerCase().includes('rate limit');
 
-        const isTimeout =
-          err.message.toLowerCase().includes('timed out') ||
-          err.message.toLowerCase().includes('timeout') ||
-          err.message.toLowerCase().includes('econnreset') ||
-          err.message.toLowerCase().includes('etimedout');
-
-        if ((isRateLimit || isTimeout) && attempt < _maxRetries) {
+        // Timeout errors are NOT retried — retrying a slow API just wastes the time budget.
+        // Only rate limit errors benefit from retry with backoff.
+        if (isRateLimit && attempt < _maxRetries) {
           const delayMs = Math.pow(2, attempt) * this.retryBaseDelayMs; // 1x, 2x, 4x base delay
-          const reason = isTimeout ? 'timed out' : 'rate limited';
-          logger.warn(`GLM API ${reason}, retrying in ${delayMs}ms`, undefined, undefined, {
+          logger.warn(`GLM API rate limited, retrying in ${delayMs}ms`, undefined, undefined, {
             attempt: attempt + 1,
             maxRetries: _maxRetries,
           });
