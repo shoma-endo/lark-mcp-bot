@@ -15,6 +15,7 @@ import {
   IntentPlan,
   RequesterIdentity,
 } from './intent-planner.js';
+import { buildSystemPrompt, SUMMARY_SYSTEM_PROMPT } from './prompts.js';
 
 export class MessageProcessor {
   private readonly SUMMARY_TRIGGER_MESSAGES = 24;
@@ -66,7 +67,7 @@ export class MessageProcessor {
       const intentPlan = this.intentPlanner.createPlan(cleanText);
       history.push({ role: 'user', content: intentPlan.normalizedUserText || cleanText });
 
-      const systemPrompt = this.buildSystemPrompt(intentPlan);
+      const systemPrompt = buildSystemPrompt(this.toolExecutor.convertMcpToolsToFunctions(), intentPlan, cleanText);
       const messagesForLlm = [
         { role: 'system', content: systemPrompt },
         ...history.slice(-20),
@@ -249,7 +250,7 @@ export class MessageProcessor {
       const summaryPrompt: ConversationMessage[] = [
         {
           role: 'system',
-          content: '以下の会話履歴を、目的・合意事項・未完了タスク・重要なID/URLに分けて日本語で簡潔に要約してください。1000文字以内。'
+          content: SUMMARY_SYSTEM_PROMPT,
         },
         {
           role: 'user',
@@ -398,27 +399,6 @@ export class MessageProcessor {
 
     visit(value);
     return parts.join('').trim();
-  }
-
-  private buildSystemPrompt(intentPlan: IntentPlan): string {
-    const functions = this.toolExecutor.convertMcpToolsToFunctions();
-    const toolDocs = functions.map(f => `- ${f.function.name}: ${f.function.description}`).join('\n');
-    const plannerHints = intentPlan.slotHints.intent
-      ? `\nPlanner hints:\n- intent: ${intentPlan.slotHints.intent}\n- time_min: ${intentPlan.slotHints.timeMin || '(none)'}\n- time_max: ${intentPlan.slotHints.timeMax || '(none)'}\n- confidence: ${intentPlan.slotHints.confidence}`
-      : '';
-    
-    return `あなたはLarkのAIアシスタントボットです。
-ユーザーのリクエストに応じてLark APIを通じて様々な操作を実行できます。
-
-利用可能なツール:
-${toolDocs}
-${plannerHints}
-
-重要: tool call の arguments は必ず厳密なJSON objectを出力してください。XML風タグ（<tool_call>, <arg_value>）や key=value 連結形式は使用禁止です。
-例: calendar.v4.freebusy.list の arguments は {"time_min":"2025-02-18T00:00:00+09:00","time_max":"2025-02-25T00:00:00+09:00","user_ids":["me"]} のようなJSONにしてください。
-
-日本語で丁寧に答えてください。ツールを実行する必要がある場合は、適切なツールを選択してください。Markdown記法や記号装飾（例: **, #）は使わず、プレーンテキストで回答してください。
-ツール実行でエラーが発生した場合は、エラーメッセージを省略せずそのままユーザーに伝えてください。`;
   }
 
   private sanitizeReplyText(text: string): string {

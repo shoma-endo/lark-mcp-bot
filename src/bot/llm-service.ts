@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
+import { ERROR_REPLY_SYSTEM_PROMPT } from './prompts.js';
 import {
   ConversationMessage,
   FunctionDefinition,
@@ -80,7 +81,7 @@ export class LLMService {
         messages: [
           {
             role: 'system',
-            content: 'あなたはLarkボットです。システムエラー時の短い案内文を日本語で1-2文で作成してください。憶測はせず、再試行や確認方法を具体的に示してください。Markdown記法や記号装飾（例: **, #）は使わないでください。',
+            content: ERROR_REPLY_SYSTEM_PROMPT,
           },
           {
             role: 'user',

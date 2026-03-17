@@ -74,7 +74,12 @@ export class LarkMCPBot {
       domain: config.larkDomain,
       toolsOptions: {
         language: 'en',
-        allowTools: [...new Set([...defaultToolNames, ...presetCalendarToolNames, ...presetTaskToolNames])] as any,
+        allowTools: [...new Set([
+          ...defaultToolNames,
+          ...presetCalendarToolNames,
+          ...presetTaskToolNames,
+          'bitable.v1.appTableField.create',
+        ])] as any,
       },
     }, undefined);
 
