@@ -133,6 +133,7 @@ export class MessageProcessor {
     intentPlan: IntentPlan
   ): Promise<string> {
     const mutationResultUrls = new Set<string>();
+    const toolErrors: string[] = [];
     const functions = this.toolExecutor.convertMcpToolsToFunctions();
     const availableToolNames = new Set(this.toolExecutor.convertMcpToolsToFunctions().map(f => f.function.name));
     const executeToolCalls = async (calls: any[]): Promise<void> => {
@@ -147,6 +148,9 @@ export class MessageProcessor {
         );
 
         let result = await this.toolExecutor.executeToolCall(functionName, functionArgs);
+        if (result.startsWith('Error:') || result.startsWith('Error executing tool:')) {
+          toolErrors.push(`[${functionName}] ${result}`);
+        }
         const postCheck = await this.tryPostCheck(functionName, functionArgs, result, availableToolNames, context);
         if (postCheck) {
           result = `${result}\n\n${postCheck}`;
@@ -207,6 +211,11 @@ export class MessageProcessor {
 
     if (!finalResponse) {
       finalResponse = '処理は完了しましたが、最終メッセージの生成に失敗しました。必要であればもう一度お試しください。';
+    }
+
+    // Append tool errors so the user can see the raw details
+    if (toolErrors.length > 0) {
+      finalResponse += '\n\nツールエラー詳細:\n' + toolErrors.join('\n');
     }
 
     // Append mutation links if any
@@ -408,7 +417,8 @@ ${plannerHints}
 重要: tool call の arguments は必ず厳密なJSON objectを出力してください。XML風タグ（<tool_call>, <arg_value>）や key=value 連結形式は使用禁止です。
 例: calendar.v4.freebusy.list の arguments は {"time_min":"2025-02-18T00:00:00+09:00","time_max":"2025-02-25T00:00:00+09:00","user_ids":["me"]} のようなJSONにしてください。
 
-日本語で丁寧に答えてください。ツールを実行する必要がある場合は、適切なツールを選択してください。Markdown記法や記号装飾（例: **, #）は使わず、プレーンテキストで回答してください。`;
+日本語で丁寧に答えてください。ツールを実行する必要がある場合は、適切なツールを選択してください。Markdown記法や記号装飾（例: **, #）は使わず、プレーンテキストで回答してください。
+ツール実行でエラーが発生した場合は、エラーメッセージを省略せずそのままユーザーに伝えてください。`;
   }
 
   private sanitizeReplyText(text: string): string {
