@@ -14,8 +14,10 @@ const BITABLE_KEYWORDS = /bitable|base|テーブル|フィールド|レコード
  */
 export const BITABLE_HINTS = `
 Bitableテーブルを作成する場合は、以下の手順で行ってください:
-1. bitable.v1.appTable.create でテーブル名のみ作成（fieldsは指定しない）
-2. bitable.v1.appTableField.create で各フィールドを個別に追加
+1. bitable.v1.app.create でBaseを作成 → レスポンスの app_token を必ず記録する
+2. bitable.v1.appTable.create でテーブル名のみ作成（fieldsは指定しない。app_tokenは必須）
+3. bitable.v1.appTableField.create で各フィールドを個別に追加（app_tokenとtable_idは必須）
+重要: 各ステップで前のステップの結果から app_token、table_id を取得して引数に必ず渡すこと。
 
 Bitableフィールドのtype値と用途:
 1=テキスト（メールは ui_type:"Email" を追加）, 2=数値, 3=単一選択, 4=複数選択,

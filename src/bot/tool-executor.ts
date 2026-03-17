@@ -37,7 +37,12 @@ export class ToolExecutor {
   }
 
   /**
-   * Convert MCP tools to GLM function calling format
+   * Convert MCP tools to GLM function calling format.
+   *
+   * The MCP tool schema is a plain object of Zod schemas keyed by `data`, `path`, `useUAT`.
+   * `schema.properties` is therefore undefined — the LLM would receive an empty parameter list.
+   * To fix this, we parse the tool's URL template for `:param` placeholders and expose them
+   * as required top-level string properties so the LLM knows it must supply them.
    */
   convertMcpToolsToFunctions(): FunctionDefinition[] {
     const allMcpTools = this.mcpTool.getTools() as MCPTool[];
@@ -45,18 +50,34 @@ export class ToolExecutor {
 
     return mcpTools.map((tool: MCPTool): FunctionDefinition => {
       const { schema } = tool;
-      const cleanSchema = {
-        type: (schema.type as string) || 'object',
-        properties: schema.properties || {},
-        required: schema.required || [],
-      };
+      const rawTool = tool as unknown as Record<string, unknown>;
+
+      // Extract path param names from URL template, e.g. /apps/:app_token/tables → ['app_token']
+      const urlTemplate = rawTool['path'] as string | undefined;
+      const pathParamNames = (urlTemplate?.match(/:([^/]+)/g) ?? []).map(p => p.slice(1));
+
+      const properties: Record<string, unknown> = { ...(schema.properties ?? {}) };
+      const required: string[] = [...(schema.required ?? [])];
+
+      for (const param of pathParamNames) {
+        if (!properties[param]) {
+          properties[param] = { type: 'string', description: `Required path parameter: ${param}` };
+        }
+        if (!required.includes(param)) {
+          required.push(param);
+        }
+      }
 
       return {
         type: 'function',
         function: {
           name: tool.name,
           description: tool.description,
-          parameters: cleanSchema,
+          parameters: {
+            type: (schema.type as string) || 'object',
+            properties,
+            required,
+          },
         },
       };
     });
