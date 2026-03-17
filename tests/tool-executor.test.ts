@@ -205,7 +205,7 @@ describe('ToolExecutor', () => {
     expect(larkUtils.larkOapiHandler).toHaveBeenCalledWith(
       mockLarkClient,
       expect.objectContaining({
-        app_token: 'bascnAbCdEf12345',
+        path: expect.objectContaining({ app_token: 'bascnAbCdEf12345' }),
       }),
       expect.anything()
     );
@@ -224,7 +224,7 @@ describe('ToolExecutor', () => {
     expect(larkUtils.larkOapiHandler).toHaveBeenCalledWith(
       mockLarkClient,
       expect.objectContaining({
-        app_token: 'TSfwb28NxaOUDfsLAEijfeqfpnd',
+        path: expect.objectContaining({ app_token: 'TSfwb28NxaOUDfsLAEijfeqfpnd' }),
       }),
       expect.anything()
     );

@@ -145,9 +145,12 @@ export class ToolExecutor {
     const data = parameters.data && typeof parameters.data === 'object' && !Array.isArray(parameters.data)
       ? (parameters.data as Record<string, unknown>)
       : undefined;
+    const path = parameters.path && typeof parameters.path === 'object' && !Array.isArray(parameters.path)
+      ? (parameters.path as Record<string, unknown>)
+      : undefined;
 
     const missing = required.filter((key) => {
-      const value = parameters[key] ?? data?.[key];
+      const value = parameters[key] ?? data?.[key] ?? path?.[key];
       if (value === undefined || value === null) return true;
       if (typeof value === 'string' && value.trim() === '') return true;
       if (Array.isArray(value) && value.length === 0) return true;
@@ -293,38 +296,98 @@ export class ToolExecutor {
 
   private normalizeBitableParameters(parameters: Record<string, unknown>): Record<string, unknown> {
     const normalized: Record<string, unknown> = { ...parameters };
-    const data = normalized.data && typeof normalized.data === 'object' && !Array.isArray(normalized.data)
+    const existingData = normalized.data && typeof normalized.data === 'object' && !Array.isArray(normalized.data)
       ? { ...(normalized.data as Record<string, unknown>) }
-      : undefined;
+      : {};
 
-    const existingAppToken = typeof normalized.app_token === 'string'
-      ? normalized.app_token.trim()
-      : (typeof data?.app_token === 'string' ? String(data.app_token).trim() : '');
-    if (existingAppToken) return normalized;
+    // --- Step 1: Extract app_token from URL if missing ---
+    const hasAppToken = (typeof normalized.app_token === 'string' && normalized.app_token.trim()) ||
+      (typeof existingData.app_token === 'string' && (existingData.app_token as string).trim());
 
-    const candidateSources: string[] = [];
-    const maybePush = (value: unknown): void => {
-      if (typeof value === 'string' && value.trim()) candidateSources.push(value.trim());
-    };
-    maybePush(normalized.url);
-    maybePush(normalized.base_url);
-    maybePush(normalized.app_url);
-    maybePush(normalized.text);
-    maybePush(data?.url);
-    maybePush(data?.base_url);
-    maybePush(data?.app_url);
-    maybePush(data?.text);
+    if (!hasAppToken) {
+      const candidateSources: string[] = [];
+      const maybePush = (value: unknown): void => {
+        if (typeof value === 'string' && value.trim()) candidateSources.push(value.trim());
+      };
+      maybePush(normalized.url);
+      maybePush(normalized.base_url);
+      maybePush(normalized.app_url);
+      maybePush(normalized.text);
+      maybePush(existingData.url);
+      maybePush(existingData.base_url);
+      maybePush(existingData.app_url);
+      maybePush(existingData.text);
 
-    for (const source of candidateSources) {
-      const token = this.extractBitableAppToken(source);
-      if (!token) continue;
-      normalized.app_token = token;
-      if (data) {
-        data.app_token = token;
-        normalized.data = data;
+      for (const source of candidateSources) {
+        const token = this.extractBitableAppToken(source);
+        if (!token) continue;
+        normalized.app_token = token;
+        break;
       }
-      break;
     }
+
+    // --- Step 2: Move path parameters into path sub-object ---
+    // The Lark SDK reads path params from params.path (used in fillApiPath).
+    const existingPath = normalized.path && typeof normalized.path === 'object' && !Array.isArray(normalized.path)
+      ? { ...(normalized.path as Record<string, unknown>) }
+      : {};
+
+    const BITABLE_PATH_PARAMS = ['app_token', 'table_id', 'record_id', 'field_id', 'view_id'];
+    for (const key of BITABLE_PATH_PARAMS) {
+      const val = normalized[key];
+      if (typeof val === 'string' && val.trim()) {
+        existingPath[key] = val.trim();
+        delete normalized[key];
+      }
+    }
+    if (Object.keys(existingPath).length > 0) normalized.path = existingPath;
+
+    // --- Step 3: Parse JSON strings for body parameters and move to data ---
+    for (const key of ['table', 'record', 'records']) {
+      const val = normalized[key];
+      if (typeof val === 'string') {
+        try {
+          const parsed = JSON.parse(val);
+          existingData[key] = parsed;
+        } catch {
+          existingData[key] = val;
+        }
+        delete normalized[key];
+      } else if (val !== undefined && val !== null) {
+        existingData[key] = val;
+        delete normalized[key];
+      }
+    }
+
+    // Parse fields (JSON string array) and merge into data.table if present
+    if (normalized.fields !== undefined) {
+      let parsedFields: unknown = normalized.fields;
+      if (typeof parsedFields === 'string') {
+        try { parsedFields = JSON.parse(parsedFields); } catch { /* keep */ }
+      }
+      if (Array.isArray(parsedFields)) {
+        const tableInData = existingData.table;
+        if (tableInData && typeof tableInData === 'object' && !Array.isArray(tableInData)) {
+          (existingData.table as Record<string, unknown>).fields = parsedFields;
+        } else {
+          existingData.fields = parsedFields;
+        }
+      }
+      delete normalized.fields;
+    }
+
+    // Merge default_view_name into data.table if present
+    if (typeof normalized.default_view_name === 'string') {
+      const tableInData = existingData.table;
+      if (tableInData && typeof tableInData === 'object' && !Array.isArray(tableInData)) {
+        (existingData.table as Record<string, unknown>).default_view_name = normalized.default_view_name;
+      } else {
+        existingData.default_view_name = normalized.default_view_name;
+      }
+      delete normalized.default_view_name;
+    }
+
+    if (Object.keys(existingData).length > 0) normalized.data = existingData;
 
     return normalized;
   }
