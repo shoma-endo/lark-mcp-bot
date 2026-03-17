@@ -142,7 +142,7 @@ sequenceDiagram
 - ✅ **会話コンテキスト保持**: Upstash Redis統合
 - ✅ **自動ストレージ切り替え**: ローカル=メモリ、本番=Redis
 - ✅ **Vercel API Routes対応**: `api/webhook.ts`
-- ✅ **60秒実行時間**: Vercel Proプラン対応
+- ✅ **300秒実行時間**: Vercel Proプラン対応
 
 **メリット**:
 - ✅ 固定URL（変更不要）

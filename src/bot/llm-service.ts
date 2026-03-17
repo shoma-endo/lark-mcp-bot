@@ -12,6 +12,8 @@ import {
 
 export class LLMService {
   private openai: OpenAI;
+  /** Base delay (ms) for retry backoff. Override in tests to speed up. */
+  retryBaseDelayMs = 1000;
 
   constructor() {
     this.openai = new OpenAI({
@@ -22,33 +24,48 @@ export class LLMService {
   }
 
   /**
-   * Generate chat completion
+   * Generate chat completion with retry on rate limit errors
    */
   async createCompletion(
     messages: ConversationMessage[],
-    tools?: FunctionDefinition[]
+    tools?: FunctionDefinition[],
+    _maxRetries = 3
   ): Promise<OpenAI.Chat.ChatCompletion> {
-    try {
-      return await this.openai.chat.completions.create({
-        model: config.glmModel,
-        messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
-        tools: tools as OpenAI.Chat.ChatCompletionTool[],
-        temperature: 0.7,
-        max_tokens: config.glmMaxTokens,
-      });
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      const mappedError = this.mapApiErrorToBotError(error, err);
-      if (mappedError) {
-        throw mappedError;
-      }
+    for (let attempt = 0; attempt <= _maxRetries; attempt++) {
+      try {
+        return await this.openai.chat.completions.create({
+          model: config.glmModel,
+          messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
+          tools: tools as OpenAI.Chat.ChatCompletionTool[],
+          temperature: 0.7,
+          max_tokens: config.glmMaxTokens,
+        });
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        const mappedError = this.mapApiErrorToBotError(error, err);
 
-      if (err.message.includes('429') || err.message.toLowerCase().includes('rate limit')) {
-        throw new APIRateLimitError('GLM API rate limit exceeded', err);
-      }
+        const isRateLimit =
+          mappedError instanceof APIRateLimitError ||
+          err.message.includes('429') ||
+          err.message.toLowerCase().includes('rate limit');
 
-      throw new LLMError(`Failed to generate AI response: ${err.message}`, err);
+        if (isRateLimit && attempt < _maxRetries) {
+          const delayMs = Math.pow(2, attempt) * this.retryBaseDelayMs; // 1x, 2x, 4x base delay
+          logger.warn(`GLM API rate limited, retrying in ${delayMs}ms`, undefined, undefined, {
+            attempt: attempt + 1,
+            maxRetries: _maxRetries,
+          });
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+          continue;
+        }
+
+        if (mappedError) throw mappedError;
+        if (isRateLimit) throw new APIRateLimitError('GLM API rate limit exceeded', err);
+        throw new LLMError(`Failed to generate AI response: ${err.message}`, err);
+      }
     }
+    // Should never reach here
+    throw new LLMError('Unexpected retry loop exit');
   }
 
   /**

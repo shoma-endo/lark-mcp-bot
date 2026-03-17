@@ -145,7 +145,8 @@ export class LarkMCPBot {
   }
 
   /**
-   * Actual message processing logic executed asynchronously
+   * Actual message processing logic executed asynchronously.
+   * In Vercel, wraps processing in a 50-second timeout to stay within the 60-second function limit.
    */
   private async processMessageAsync(data: LarkMessageEvent, context: LogContext): Promise<void> {
     const { message, event_id } = data;
@@ -153,8 +154,22 @@ export class LarkMCPBot {
     const chatId = message.chat_id || '';
     const isThreadMessage = !!message.root_id;
 
+    const PROCESSING_TIMEOUT_MS = 290_000; // 10s buffer before Vercel's 300s limit
+
+    const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
+      let timer: ReturnType<typeof setTimeout>;
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Processing timed out after ${ms}ms`)), ms);
+      });
+      return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+    };
+
     try {
-      const responseText = await this.messageProcessor.process(data);
+      const processPromise = this.messageProcessor.process(data);
+      const responseText = this.shouldAwaitMessageProcessing()
+        ? await withTimeout(processPromise, PROCESSING_TIMEOUT_MS)
+        : await processPromise;
+
       if (responseText && messageId) {
         // Use event_id as uuid for Lark API idempotency
         await this.sendMessageWithRetry(messageId, responseText, context, event_id, 3, isThreadMessage);

@@ -337,12 +337,14 @@ describe('LarkMCPBot Integration Tests', () => {
       const OpenAI = (await import('openai')).default;
       const mockOpenAI = new OpenAI({ apiKey: 'test' });
 
+      // Reject all attempts (including retries) so error always propagates
       (mockOpenAI.chat.completions.create as ReturnType<typeof vi.fn>)
-        .mockRejectedValueOnce(new Error('GLM API Error: 429 - Rate limit exceeded'));
+        .mockRejectedValue(new Error('GLM API Error: 429 - Rate limit exceeded'));
 
       const { LarkMCPBot } = await import('../src/bot/index.js');
       const bot = new LarkMCPBot();
       (bot.getLLMService() as any).openai = mockOpenAI;
+      (bot.getLLMService() as any).retryBaseDelayMs = 0; // Skip delays in test
 
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});

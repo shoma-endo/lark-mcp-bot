@@ -10,7 +10,7 @@
   ],
   "functions": {
     "api/webhook.ts": {
-      "maxDuration": 60
+      "maxDuration": 300
     }
   }
 }
