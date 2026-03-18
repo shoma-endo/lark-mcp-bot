@@ -218,8 +218,8 @@ export class LarkMCPBot {
   private async shouldProcessMessage(messageId?: string, chatId?: string): Promise<boolean> {
     if (!messageId) return true;
 
-    const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
-    const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+    const redisUrl = process.env.KV_REST_API_URL;
+    const redisToken = process.env.KV_REST_API_TOKEN;
 
     if (redisUrl && redisToken) {
       const success = await this.checkRedisDedup(redisUrl, redisToken, messageId, chatId);

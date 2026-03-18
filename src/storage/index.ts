@@ -11,8 +11,8 @@ export type { ConversationStorage };
  * Uses Redis in production (Vercel), Memory in development
  */
 export function createStorage(): ConversationStorage {
-  const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
-  const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+  const redisUrl = process.env.KV_REST_API_URL;
+  const redisToken = process.env.KV_REST_API_TOKEN;
 
   if (redisUrl && redisToken) {
     try {
