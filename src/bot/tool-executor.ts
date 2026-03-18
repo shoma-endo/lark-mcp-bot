@@ -11,6 +11,11 @@ import {
   ToolExecutionError,
   FunctionDefinition,
 } from '../types.js';
+import {
+  getAllCustomTools,
+  getCustomTool,
+  toFunctionDefinition,
+} from './custom-tools/index.js';
 
 export class ToolExecutor {
   constructor(
@@ -50,7 +55,7 @@ export class ToolExecutor {
     const allMcpTools = this.mcpTool.getTools() as MCPTool[];
     const mcpTools = this.filterMcpTools(allMcpTools);
 
-    return mcpTools.map((tool: MCPTool): FunctionDefinition => {
+    const mcpDefs = mcpTools.map((tool: MCPTool): FunctionDefinition => {
       const rawSchema = tool.schema as unknown as Record<string, unknown>;
       const properties: Record<string, unknown> = {};
       const required: string[] = [];
@@ -109,6 +114,13 @@ export class ToolExecutor {
         },
       };
     });
+
+    // Append custom tools (not available in lark-mcp)
+    const customDefs = getAllCustomTools()
+      .filter((ct) => !config.disabledTools.includes(ct.name))
+      .map(toFunctionDefinition);
+
+    return [...mcpDefs, ...customDefs];
   }
 
   /**
@@ -124,9 +136,6 @@ export class ToolExecutor {
     const metricId = `tool_${toolName}_${Date.now()}`;
 
     try {
-      const normalizedParameters = this.normalizeToolParameters(toolName, parameters);
-      logger.startMetric(metricId, `execute_tool_${toolName}`, { parameters: normalizedParameters });
-
       if (!toolName) {
         throw new ValidationError('Invalid tool name', 'toolName');
       }
@@ -135,6 +144,19 @@ export class ToolExecutor {
       if (disabledTools.includes(toolName)) {
         throw new ToolExecutionError(`Tool ${toolName} is disabled`, toolName);
       }
+
+      // ── Custom tool path ──────────────────────────────────────────────────
+      const customTool = getCustomTool(toolName);
+      if (customTool) {
+        logger.startMetric(metricId, `execute_tool_${toolName}`, { parameters });
+        const content = await customTool.execute(parameters, userAccessToken);
+        logger.endMetric(metricId, context, { resultLength: content.length });
+        return content;
+      }
+
+      // ── MCP tool path ─────────────────────────────────────────────────────
+      const normalizedParameters = this.normalizeToolParameters(toolName, parameters);
+      logger.startMetric(metricId, `execute_tool_${toolName}`, { parameters: normalizedParameters });
 
       const mcpTools = this.mcpTool.getTools() as MCPTool[];
       const tool = mcpTools.find((t: MCPTool) => t.name === toolName);
@@ -157,7 +179,7 @@ export class ToolExecutor {
       }
 
       const content = result.content?.[0]?.text || JSON.stringify(result.content);
-      
+
       logger.endMetric(metricId, context, { resultLength: content.length });
       return content;
     } catch (error) {

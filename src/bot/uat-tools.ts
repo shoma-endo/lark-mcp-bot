@@ -5,11 +5,15 @@ import { logger } from '../utils/logger.js';
 
 /** Tools that must run as the requesting user (not the bot app). */
 export const UAT_REQUIRED_TOOLS = new Set([
+  // MCP calendar tools
   'calendar.v4.calendarEvent.create',
   'calendar.v4.calendarEvent.patch',
   'calendar.v4.calendarEvent.get',
   'calendar.v4.freebusy.list',
   'calendar.v4.calendar.primary',
+  // Custom calendar tools
+  'calendar.v4.calendarEvent.list',
+  // MCP task tools
   'task.v2.task.create',
   'task.v2.task.patch',
   'task.v2.task.addMembers',

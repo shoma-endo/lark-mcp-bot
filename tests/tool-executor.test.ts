@@ -91,7 +91,7 @@ describe('ToolExecutor', () => {
   it('should convert MCP tools to functions', () => {
     config.disabledTools = [];
     const functions = toolExecutor.convertMcpToolsToFunctions();
-    expect(functions.length).toBe(6);
+    expect(functions.length).toBe(7); // 6 MCP tools + 1 custom tool (calendar.v4.calendarEvent.list)
     expect(functions[0].function.name).toBe('test_tool');
     expect(functions[0].function.parameters.type).toBe('object');
   });
