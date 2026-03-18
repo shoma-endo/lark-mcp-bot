@@ -84,7 +84,7 @@ export async function buildOAuthUrl(openId: string): Promise<string> {
     client_id: config.larkAppId,
     response_type: 'code',
     redirect_uri: config.larkOAuthRedirectUri,
-    scope: 'calendar:calendar:readonly calendar:calendar task:task offline_access',
+    scope: 'calendar:calendar task:task offline_access',
     state: stateId,
   });
   return `https://open.larksuite.com/open-apis/authen/v1/authorize?${params.toString()}`;
