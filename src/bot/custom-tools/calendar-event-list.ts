@@ -148,7 +148,7 @@ export const calendarEventListTool: CustomTool = {
       if (startTs) query.set('start_time', startTs);
       if (endTs) query.set('end_time', endTs);
       const pageSize = typeof params.page_size === 'number' ? params.page_size : 50;
-      query.set('page_size', String(Math.min(Math.max(pageSize, 50), 1000)));
+      query.set('page_size', String(Math.min(Math.max(pageSize, 1), 1000)));
 
       const url = `${config.larkDomain}/open-apis/calendar/v4/calendars/${encodeURIComponent(calendarId)}/events?${query.toString()}`;
       logger.debug(`calendarEvent.list → GET ${url}`);
@@ -157,7 +157,9 @@ export const calendarEventListTool: CustomTool = {
         headers: { Authorization: `Bearer ${userAccessToken}` },
       });
       if (!res.ok) {
-        return `Error: 予定一覧取得に失敗しました (HTTP ${res.status})`;
+        const errBody = await res.text().catch(() => '');
+        logger.warn(`calendarEvent.list HTTP ${res.status}: ${errBody}`);
+        return `Error: 予定一覧取得に失敗しました (HTTP ${res.status}): ${errBody}`;
       }
 
       const data = await res.json() as LarkEventListResponse;
