@@ -17,6 +17,7 @@ import {
 } from './intent-planner.js';
 import { buildSystemPrompt, SUMMARY_SYSTEM_PROMPT } from './prompts.js';
 import { requiresUAT, getValidAccessToken, buildOAuthUrl } from './uat-tools.js';
+import { getUATStore } from '../storage/uat-store.js';
 
 export class MessageProcessor {
   private readonly SUMMARY_TRIGGER_MESSAGES = 24;
@@ -177,6 +178,23 @@ export class MessageProcessor {
           functionArgs,
           ...(userAccessToken ? [userAccessToken] : [])
         );
+
+        // Detect scope-insufficient error (99991679) → delete stale token and re-auth
+        if (result.includes('99991679') && requiresUAT(functionName) && senderOpenId) {
+          await getUATStore().deleteUAT(senderOpenId);
+          const authUrl = await buildOAuthUrl(senderOpenId);
+          const authMsg = `認証トークンの権限が不足しています。以下のリンクから再認証してください（10分間有効）:\n${authUrl}`;
+          result = authMsg;
+          history.push({
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            name: functionName,
+            content: authMsg,
+          });
+          toolErrors.push(`[${functionName}] 再認証が必要です。送信した認証リンクから認証後、再度お試しください。`);
+          continue;
+        }
+
         if (result.startsWith('Error:') || result.startsWith('Error executing tool:')) {
           toolErrors.push(`[${functionName}] ${result}`);
         }
