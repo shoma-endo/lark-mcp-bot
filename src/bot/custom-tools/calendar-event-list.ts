@@ -130,13 +130,23 @@ export const calendarEventListTool: CustomTool = {
       }
 
       // Step 2: list events
+      // Convert ISO 8601 or any date string to Unix timestamp (seconds)
+      const toUnixSec = (v: unknown): string | null => {
+        if (typeof v !== 'string' || !v.trim()) return null;
+        const s = v.trim();
+        // Already a Unix timestamp (all digits)
+        if (/^\d+$/.test(s)) return s;
+        // ISO 8601 or any parseable date string
+        const ms = Date.parse(s);
+        if (!isNaN(ms)) return String(Math.floor(ms / 1000));
+        return null;
+      };
+
       const query = new URLSearchParams();
-      if (typeof params.start_time === 'string' && params.start_time.trim()) {
-        query.set('start_time', params.start_time.trim());
-      }
-      if (typeof params.end_time === 'string' && params.end_time.trim()) {
-        query.set('end_time', params.end_time.trim());
-      }
+      const startTs = toUnixSec(params.start_time);
+      const endTs = toUnixSec(params.end_time);
+      if (startTs) query.set('start_time', startTs);
+      if (endTs) query.set('end_time', endTs);
       const pageSize = typeof params.page_size === 'number' ? params.page_size : 50;
       query.set('page_size', String(Math.min(Math.max(pageSize, 50), 1000)));
 
