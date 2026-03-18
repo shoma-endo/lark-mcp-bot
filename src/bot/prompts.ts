@@ -15,16 +15,18 @@ const BITABLE_KEYWORDS = /bitable|base|テーブル|フィールド|レコード
 export const BITABLE_HINTS = `
 Bitableテーブルを作成する場合は、以下の手順で行ってください:
 1. bitable.v1.app.create でBaseを作成 → レスポンスの app_token を必ず記録する
-2. bitable.v1.appTable.create でテーブル名のみ作成（fieldsは指定しない。app_tokenは必須）
-3. bitable.v1.appTableField.create で各フィールドを個別に追加（app_tokenとtable_idは必須）
+2. bitable.v1.appTable.create でテーブルとフィールドをまとめて作成（app_tokenは必須）
+   - fields配列でフィールドを指定可能。各フィールドは必ず field_name（nameではない）と type を指定すること
+   - 例: {"field_name":"顧客名","type":1}, {"field_name":"ステータス","type":3}
+3. フィールドを後から追加する場合は bitable.v1.appTableField.create を使用（app_tokenとtable_idは必須）
 重要: 各ステップで前のステップの結果から app_token、table_id を取得して引数に必ず渡すこと。
 
-Bitableフィールドのtype値と用途:
+Bitableフィールドのtype値と用途（作成可能なもののみ）:
 1=テキスト（メールは ui_type:"Email" を追加）, 2=数値, 3=単一選択, 4=複数選択,
 5=日時, 7=チェックボックス, 11=ユーザー（人物。電話・メールに使わないこと）,
-13=電話番号, 15=URL, 17=添付ファイル, 18=単方向リンク, 21=双方向リンク,
-1001=作成日時, 1002=更新日時, 1003=作成者, 1004=更新者, 1005=自動番号
-作成不可のため使用禁止: 24（Stage）, 3001（Button）`;
+13=電話番号, 15=URL, 17=添付ファイル, 18=単方向リンク, 21=双方向リンク
+作成不可のため使用禁止（Bitableが自動生成するため手動作成できない）:
+1001=作成日時, 1002=更新日時, 1003=作成者, 1004=更新者, 1005=自動番号, 24=Stage, 3001=Button`;
 
 /** Base instructions always included in the system prompt. */
 export const BASE_SYSTEM_PROMPT = `あなたはLarkのAIアシスタントボットです。

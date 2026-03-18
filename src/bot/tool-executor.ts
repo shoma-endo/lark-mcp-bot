@@ -39,41 +39,64 @@ export class ToolExecutor {
   /**
    * Convert MCP tools to GLM function calling format.
    *
-   * The MCP tool schema is a plain object of Zod schemas keyed by `data`, `path`, `useUAT`.
-   * We extract:
-   *   1. Path param names from the URL template (`:param` placeholders) → required string params
-   *   2. Data body fields from the `data` Zod schema → flat params LLM can pass directly
+   * Each MCP tool schema is `{ data: ZodObject, path: ZodObject, useUAT?: ZodBool }`.
+   * We use Zod v4's built-in `toJSONSchema()` to convert both the `data` (body) and
+   * `path` (URL path params) schemas into a flat JSON Schema the LLM can use.
    *
-   * On execution, `normalizeToolParameters` restructures flat params back into
-   * the `{ path: {...}, data: {...} }` shape the SDK expects.
+   * On execution, `normalizeToolParameters` restructures the flat params back into
+   * the `{ path: {...}, data: {...} }` shape the Lark SDK expects.
    */
   convertMcpToolsToFunctions(): FunctionDefinition[] {
     const allMcpTools = this.mcpTool.getTools() as MCPTool[];
     const mcpTools = this.filterMcpTools(allMcpTools);
 
     return mcpTools.map((tool: MCPTool): FunctionDefinition => {
-      const { schema } = tool;
-      const rawTool = tool as unknown as Record<string, unknown>;
+      const rawSchema = tool.schema as unknown as Record<string, unknown>;
+      const properties: Record<string, unknown> = {};
+      const required: string[] = [];
 
-      // 1. Extract path param names from URL template, e.g. /apps/:app_token/tables → ['app_token']
-      const urlTemplate = rawTool['path'] as string | undefined;
-      const pathParamNames = (urlTemplate?.match(/:([^/]+)/g) ?? []).map(p => p.slice(1));
+      // Extract data body fields (field_name, type, ui_type, etc.)
+      const dataSchema = rawSchema['data'] as { toJSONSchema?: () => unknown } | undefined;
+      if (typeof dataSchema?.toJSONSchema === 'function') {
+        try {
+          const js = dataSchema.toJSONSchema() as {
+            properties?: Record<string, unknown>;
+            required?: string[];
+          };
+          for (const [k, v] of Object.entries(js.properties ?? {})) {
+            properties[k] = v;
+          }
+          for (const r of js.required ?? []) {
+            if (!required.includes(r as string)) required.push(r as string);
+          }
+        } catch { /* ignore schema conversion errors */ }
+      }
 
-      // 2. Extract data body fields from the Zod schema
-      const rawSchema = schema as unknown as Record<string, unknown>;
-      const { properties: dataProps, required: dataReq } =
-        this.extractZodObjectProperties(rawSchema['data']);
-
-      const properties: Record<string, unknown> = { ...dataProps };
-      const required: string[] = [...dataReq];
-
-      // Path params take precedence and are always required
-      for (const param of pathParamNames) {
-        if (!properties[param]) {
-          properties[param] = { type: 'string', description: `Required path parameter: ${param}` };
-        }
-        if (!required.includes(param)) {
-          required.push(param);
+      // Extract path params (app_token, table_id, etc.) — always required, take precedence
+      const pathSchema = rawSchema['path'] as { toJSONSchema?: () => unknown } | undefined;
+      if (typeof pathSchema?.toJSONSchema === 'function') {
+        try {
+          const js = pathSchema.toJSONSchema() as {
+            properties?: Record<string, unknown>;
+            required?: string[];
+          };
+          for (const [k, v] of Object.entries(js.properties ?? {})) {
+            properties[k] = v; // path params override same-named data params
+          }
+          for (const r of js.required ?? []) {
+            if (!required.includes(r as string)) required.push(r as string);
+          }
+        } catch { /* ignore */ }
+      } else {
+        // Fallback: extract `:param` from URL template when toJSONSchema is unavailable
+        const rawTool = tool as unknown as Record<string, unknown>;
+        const urlTemplate = rawTool['path'] as string | undefined;
+        for (const m of urlTemplate?.match(/:([^/]+)/g) ?? []) {
+          const param = m.slice(1);
+          if (!properties[param]) {
+            properties[param] = { type: 'string', description: `Required path parameter: ${param}` };
+          }
+          if (!required.includes(param)) required.push(param);
         }
       }
 
@@ -82,79 +105,10 @@ export class ToolExecutor {
         function: {
           name: tool.name,
           description: tool.description,
-          parameters: {
-            type: (schema.type as string) || 'object',
-            properties,
-            required,
-          },
+          parameters: { type: 'object', properties, required },
         },
       };
     });
-  }
-
-  /**
-   * Extract JSON schema properties from a Zod object schema (or Optional/Nullable wrapper).
-   * Only handles primitive types and simple objects — enough for LLM function calling hints.
-   */
-  private extractZodObjectProperties(zodSchema: unknown): {
-    properties: Record<string, unknown>;
-    required: string[];
-  } {
-    const shape = this.getZodObjectShape(zodSchema);
-    if (!shape) return { properties: {}, required: [] };
-
-    const properties: Record<string, unknown> = {};
-    const required: string[] = [];
-
-    for (const [key, fieldZod] of Object.entries(shape)) {
-      const result = this.zodFieldToJsonSchemaProp(fieldZod);
-      if (result) {
-        properties[key] = result.schema;
-        if (!result.isOptional) required.push(key);
-      }
-    }
-
-    return { properties, required };
-  }
-
-  private getZodObjectShape(zodSchema: unknown): Record<string, unknown> | null {
-    const z = zodSchema as Record<string, any>;
-    if (!z?._def) return null;
-    const tn: string = z._def.typeName;
-    if (tn === 'ZodOptional' || tn === 'ZodNullable') {
-      return this.getZodObjectShape(z._def.innerType);
-    }
-    if (tn === 'ZodObject') {
-      return (z._def.shape?.() as Record<string, unknown>) ?? null;
-    }
-    return null;
-  }
-
-  private zodFieldToJsonSchemaProp(
-    fieldZod: unknown
-  ): { schema: Record<string, unknown>; isOptional: boolean } | null {
-    let z = fieldZod as Record<string, any>;
-    let isOptional = false;
-
-    while (z?._def?.typeName === 'ZodOptional' || z?._def?.typeName === 'ZodNullable') {
-      isOptional = true;
-      z = z._def.innerType;
-    }
-
-    if (!z?._def) return null;
-    const tn: string = z._def.typeName;
-    const description: string = z._def.description ?? '';
-    const base: Record<string, unknown> = description ? { description } : {};
-
-    switch (tn) {
-      case 'ZodString':  return { schema: { ...base, type: 'string' }, isOptional };
-      case 'ZodNumber':  return { schema: { ...base, type: 'number' }, isOptional };
-      case 'ZodBoolean': return { schema: { ...base, type: 'boolean' }, isOptional };
-      case 'ZodEnum':    return { schema: { ...base, type: 'string', enum: z._def.values }, isOptional };
-      case 'ZodObject':  return { schema: { ...base, type: 'object' }, isOptional };
-      case 'ZodArray':   return { schema: { ...base, type: 'array' }, isOptional };
-      default:           return null;
-    }
   }
 
   /**
@@ -494,6 +448,38 @@ export class ToolExecutor {
       if (!BITABLE_STRUCTURAL_KEYS.has(key)) {
         existingData[key] = normalized[key];
         delete normalized[key];
+      }
+    }
+
+    // --- Step 5: Coerce field `type` to number if LLM sent it as a string ---
+    // Bitable field type is always a number (1=Text, 3=SingleSelect, etc.).
+    // Some LLMs send it as "3" (string) which the API rejects.
+    if (typeof existingData.type === 'string') {
+      const n = Number(existingData.type);
+      if (!isNaN(n)) existingData.type = n;
+    }
+
+    // --- Step 6: Normalize table.fields entries ---
+    // LLMs often send {"name": "...", "type": 1} but Lark API requires {"field_name": "...", "type": 1}.
+    // Also coerce type to number within each field entry.
+    const tableData = existingData.table;
+    if (tableData && typeof tableData === 'object' && !Array.isArray(tableData)) {
+      const tbl = tableData as Record<string, unknown>;
+      if (Array.isArray(tbl.fields)) {
+        tbl.fields = tbl.fields.map((field: unknown) => {
+          if (!field || typeof field !== 'object' || Array.isArray(field)) return field;
+          const f = { ...(field as Record<string, unknown>) };
+          if (f.name !== undefined && f.field_name === undefined) {
+            f.field_name = f.name;
+            delete f.name;
+          }
+          if (typeof f.type === 'string') {
+            const n = Number(f.type);
+            if (!isNaN(n)) f.type = n;
+          }
+          return f;
+        });
+        existingData.table = tbl;
       }
     }
 
