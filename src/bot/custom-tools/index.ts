@@ -55,5 +55,7 @@ export function toFunctionDefinition(tool: CustomTool): FunctionDefinition {
 // ─── Register all custom tools here ───────────────────────────────────────────
 
 import { calendarEventListTool } from './calendar-event-list.js';
+import { taskListTool } from './task-list.js';
 
 registerCustomTool(calendarEventListTool);
+registerCustomTool(taskListTool);
