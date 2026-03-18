@@ -16,6 +16,7 @@ import {
   RequesterIdentity,
 } from './intent-planner.js';
 import { buildSystemPrompt, SUMMARY_SYSTEM_PROMPT } from './prompts.js';
+import { requiresUAT, getValidAccessToken, buildOAuthUrl } from './uat-tools.js';
 
 export class MessageProcessor {
   private readonly SUMMARY_TRIGGER_MESSAGES = 24;
@@ -35,6 +36,7 @@ export class MessageProcessor {
     const { message, sender } = data;
     const chatId = message.chat_id || '';
     const userId = sender?.sender_id?.user_id || 'unknown';
+    const openId = sender?.sender_id?.open_id || '';
     const context: LogContext = { chatId, userId, messageId: message.message_id };
     const metricId = `process_message_${chatId}_${Date.now()}`;
     const requesterIdentity = this.resolveRequesterIdentity(sender?.sender_id);
@@ -93,7 +95,8 @@ export class MessageProcessor {
           systemPrompt,
           context,
           requesterIdentity,
-          intentPlan
+          intentPlan,
+          openId
         );
       } else {
         finalResponse = responseMessage.content?.trim() || '';
@@ -131,7 +134,8 @@ export class MessageProcessor {
     systemPrompt: string,
     context: LogContext,
     requesterIdentity: RequesterIdentity,
-    intentPlan: IntentPlan
+    intentPlan: IntentPlan,
+    senderOpenId = ''
   ): Promise<string> {
     const mutationResultUrls = new Set<string>();
     const toolErrors: string[] = [];
@@ -148,7 +152,31 @@ export class MessageProcessor {
           intentPlan
         );
 
-        let result = await this.toolExecutor.executeToolCall(functionName, functionArgs);
+        // --- UAT: resolve user access token for personal tools ---
+        let userAccessToken: string | undefined;
+        if (requiresUAT(functionName) && senderOpenId) {
+          const token = await getValidAccessToken(senderOpenId);
+          if (!token) {
+            // No valid token → ask user to authorize
+            const authUrl = await buildOAuthUrl(senderOpenId);
+            const authMsg = `カレンダー・タスクの操作にはあなたのLarkアカウントの認証が必要です。以下のリンクから認証してください（10分間有効）:\n${authUrl}`;
+            history.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              name: functionName,
+              content: authMsg,
+            });
+            toolErrors.push(`[${functionName}] 認証が必要です。送信した認証リンクから認証後、再度お試しください。`);
+            continue;
+          }
+          userAccessToken = token;
+        }
+
+        let result = await this.toolExecutor.executeToolCall(
+          functionName,
+          functionArgs,
+          ...(userAccessToken ? [userAccessToken] : [])
+        );
         if (result.startsWith('Error:') || result.startsWith('Error executing tool:')) {
           toolErrors.push(`[${functionName}] ${result}`);
         }
@@ -202,7 +230,7 @@ export class MessageProcessor {
           tool_calls: followUpToolCalls as ConversationMessage['tool_calls'],
         });
         await executeToolCalls(followUpToolCalls);
-        continue;
+      continue;
       }
 
       finalResponse = followUpMessage.content?.trim() || '';

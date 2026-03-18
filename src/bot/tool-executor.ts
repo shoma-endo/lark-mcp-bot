@@ -112,16 +112,21 @@ export class ToolExecutor {
   }
 
   /**
-   * Execute an MCP tool call
+   * Execute an MCP tool call.
+   * @param userAccessToken When provided, the tool runs as that user (UAT mode).
    */
-  async executeToolCall(toolName: string, parameters: Record<string, unknown>): Promise<string> {
+  async executeToolCall(
+    toolName: string,
+    parameters: Record<string, unknown>,
+    userAccessToken?: string
+  ): Promise<string> {
     const context: LogContext = { toolName };
     const metricId = `tool_${toolName}_${Date.now()}`;
 
     try {
       const normalizedParameters = this.normalizeToolParameters(toolName, parameters);
       logger.startMetric(metricId, `execute_tool_${toolName}`, { parameters: normalizedParameters });
-      
+
       if (!toolName) {
         throw new ValidationError('Invalid tool name', 'toolName');
       }
@@ -140,7 +145,11 @@ export class ToolExecutor {
 
       this.validateRequiredParameters(tool, normalizedParameters);
 
-      const result = await larkOapiHandler(this.larkClient, normalizedParameters, { tool: tool as any }) as MCPToolResult;
+      const handlerParams = userAccessToken
+        ? { ...normalizedParameters, useUAT: true }
+        : normalizedParameters;
+      const handlerOptions = { tool: tool as any, ...(userAccessToken ? { userAccessToken } : {}) };
+      const result = await larkOapiHandler(this.larkClient, handlerParams, handlerOptions) as MCPToolResult;
 
       if (result.isError) {
         const errorContent = this.formatToolError(result.content?.[0]?.text || JSON.stringify(result.content));

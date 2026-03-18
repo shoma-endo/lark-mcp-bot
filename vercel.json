@@ -3,14 +3,11 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install --include=dev",
   "rewrites": [
-    {
-      "source": "/webhook/event",
-      "destination": "/api/webhook"
-    }
+    { "source": "/webhook/event", "destination": "/api/webhook" },
+    { "source": "/auth/callback",  "destination": "/api/oauth-callback" }
   ],
   "functions": {
-    "api/webhook.ts": {
-      "maxDuration": 300
-    }
+    "api/webhook.ts":        { "maxDuration": 300 },
+    "api/oauth-callback.ts": { "maxDuration": 10  }
   }
 }

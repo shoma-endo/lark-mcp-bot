@@ -7,6 +7,7 @@ export interface Config {
   larkAppId: string;
   larkAppSecret: string;
   larkDomain: string;
+  larkOAuthRedirectUri: string;
 
   // GLM Configuration
   glmApiKey: string;
@@ -44,6 +45,7 @@ export const config: Config = {
   larkAppId: getEnvVar('LARK_APP_ID'),
   larkAppSecret: getEnvVar('LARK_APP_SECRET'),
   larkDomain: LARK_DOMAIN,
+  larkOAuthRedirectUri: getEnvVar('LARK_OAUTH_REDIRECT_URI', ''),
 
   glmApiKey: getEnvVar('GLM_API_KEY'),
   glmApiBaseUrl: GLM_API_BASE_URL,
