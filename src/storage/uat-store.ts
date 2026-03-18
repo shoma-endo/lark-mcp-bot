@@ -1,7 +1,5 @@
-import { createRequire } from 'module';
+import { Redis } from '@upstash/redis';
 import { logger } from '../utils/logger.js';
-
-const require = createRequire(import.meta.url);
 
 export interface UATRecord {
   accessToken: string;
@@ -9,30 +7,24 @@ export interface UATRecord {
   expiresAt: number; // Unix seconds
 }
 
-interface RedisKV {
-  get<T>(key: string): Promise<T | null>;
-  set(key: string, value: unknown, options?: { ex?: number }): Promise<unknown>;
-  del(key: string): Promise<unknown>;
-}
-
 /** Per-user access token store backed by Redis or in-memory fallback. */
 export class UATStore {
-  private redis: RedisKV | null = null;
-  private memory: Map<string, UATRecord> = new Map();
+  private redis: Redis | null = null;
+  private memory: Map<string, unknown> = new Map();
 
-  private readonly UAT_TTL_SECONDS = 90 * 24 * 60 * 60; // 90 days (refresh token lifetime)
-  private readonly STATE_TTL_SECONDS = 600;              // 10 minutes (OAuth state)
+  private readonly UAT_TTL_SECONDS = 90 * 24 * 60 * 60; // 90 days
+  private readonly STATE_TTL_SECONDS = 600;              // 10 minutes
 
   constructor(redisUrl?: string, redisToken?: string) {
     if (redisUrl && redisToken) {
       try {
-        const upstash = require('@upstash/redis') as {
-          Redis: new (args: { url: string; token: string }) => RedisKV;
-        };
-        this.redis = new upstash.Redis({ url: redisUrl, token: redisToken });
-      } catch {
-        logger.warn('UATStore: Redis init failed, using in-memory fallback');
+        this.redis = new Redis({ url: redisUrl, token: redisToken });
+        logger.info('UATStore: Redis connected');
+      } catch (err) {
+        logger.warn('UATStore: Redis init failed, using in-memory fallback', undefined, err as Error);
       }
+    } else {
+      logger.info('UATStore: Redis env vars not set, using in-memory fallback');
     }
   }
 
@@ -40,14 +32,14 @@ export class UATStore {
     if (this.redis) {
       return this.redis.get<UATRecord>(`uat:${openId}`);
     }
-    return this.memory.get(openId) ?? null;
+    return (this.memory.get(`uat:${openId}`) as UATRecord) ?? null;
   }
 
   async setUAT(openId: string, record: UATRecord): Promise<void> {
     if (this.redis) {
       await this.redis.set(`uat:${openId}`, record, { ex: this.UAT_TTL_SECONDS });
     } else {
-      this.memory.set(openId, record);
+      this.memory.set(`uat:${openId}`, record);
     }
   }
 
@@ -55,7 +47,7 @@ export class UATStore {
     if (this.redis) {
       await this.redis.del(`uat:${openId}`);
     } else {
-      this.memory.delete(openId);
+      this.memory.delete(`uat:${openId}`);
     }
   }
 
@@ -63,8 +55,7 @@ export class UATStore {
     if (this.redis) {
       await this.redis.set(`oauth-state:${stateId}`, openId, { ex: this.STATE_TTL_SECONDS });
     } else {
-      // For memory mode, store temporarily in the memory map with a special prefix
-      this.memory.set(`state:${stateId}`, { accessToken: openId, refreshToken: '', expiresAt: 0 });
+      this.memory.set(`state:${stateId}`, openId);
     }
   }
 
@@ -74,10 +65,10 @@ export class UATStore {
       if (openId) await this.redis.del(`oauth-state:${stateId}`);
       return openId;
     }
-    const entry = this.memory.get(`state:${stateId}`);
-    if (entry) {
+    const openId = this.memory.get(`state:${stateId}`) as string | undefined;
+    if (openId) {
       this.memory.delete(`state:${stateId}`);
-      return entry.accessToken; // we stored openId in accessToken field
+      return openId;
     }
     return null;
   }
