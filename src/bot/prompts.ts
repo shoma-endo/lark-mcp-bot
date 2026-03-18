@@ -8,6 +8,9 @@ import type { IntentPlan } from './intent-planner.js';
 /** Keywords that trigger Bitable-specific hints in the system prompt. */
 const BITABLE_KEYWORDS = /bitable|base|テーブル|フィールド|レコード/i;
 
+/** Keywords that trigger current datetime injection in the system prompt. */
+const DATETIME_KEYWORDS = /今日|明日|明後日|昨日|今週|来週|先週|今月|来月|先月|今年|カレンダー|予定|スケジュール|タスク|締め切り|期限|いつ|何時|calendar|task|schedule|today|tomorrow|yesterday|next week|last week/i;
+
 /**
  * Bitable-specific guidance injected only when the user message is
  * Bitable-related, to avoid wasting tokens on unrelated requests.
@@ -57,8 +60,16 @@ export function buildSystemPrompt(
 
   const domainHints = BITABLE_KEYWORDS.test(userText) ? `\n${BITABLE_HINTS}` : '';
 
-  return `${BASE_SYSTEM_PROMPT}
+  const dateTimeHint = DATETIME_KEYWORDS.test(userText)
+    ? `\n現在日時: ${new Date().toLocaleString('ja-JP', {
+        timeZone: 'Asia/Tokyo',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', weekday: 'short',
+      })}（Asia/Tokyo）\n`
+    : '';
 
+  return `${BASE_SYSTEM_PROMPT}
+${dateTimeHint}
 利用可能なツール:
 ${toolDocs}
 ${plannerHints}
