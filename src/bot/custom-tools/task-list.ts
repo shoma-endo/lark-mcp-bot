@@ -72,6 +72,10 @@ export const taskListTool: CustomTool = {
         type: 'boolean',
         description: 'true=完了済みのみ、false=未完了のみ。省略すると全件取得。',
       },
+      due_date: {
+        type: 'string',
+        description: '期限でフィルタ。ISO8601またはUnixタイムスタンプ（秒）。例: "2026-03-19" または "2026-03-19T00:00:00+09:00"。この日付が期限のタスクのみ返す。',
+      },
       page_size: {
         type: 'number',
         description: '取得件数（1〜100、デフォルト50）。',
@@ -113,9 +117,30 @@ export const taskListTool: CustomTool = {
         return `Error: Lark API エラー [code: ${data.code}] ${data.msg ?? ''}`;
       }
 
-      const tasks = data.data?.items ?? [];
+      let tasks = data.data?.items ?? [];
       if (tasks.length === 0) {
         return '該当するタスクはありません。';
+      }
+
+      // Client-side filtering by due_date
+      const dueDateParam = params.due_date;
+      if (typeof dueDateParam === 'string' && dueDateParam.trim()) {
+        const target = new Date(/^\d+$/.test(dueDateParam.trim())
+          ? Number(dueDateParam.trim()) * 1000
+          : dueDateParam.trim());
+        const targetDateStr = target.toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' });
+
+        tasks = tasks.filter((t) => {
+          const ts = t.due?.timestamp;
+          if (!ts || ts === '0') return false;
+          const dueDate = new Date(Number(ts) * 1000);
+          const dueDateStr = dueDate.toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' });
+          return dueDateStr === targetDateStr;
+        });
+
+        if (tasks.length === 0) {
+          return `${targetDateStr}が期限のタスクはありません。`;
+        }
       }
 
       const lines: string[] = [
