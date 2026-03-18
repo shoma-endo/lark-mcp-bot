@@ -98,32 +98,32 @@ export const calendarEventListTool: CustomTool = {
     }
 
     try {
-      // Step 1: resolve calendar_id (fetch primary if not provided)
+      // Step 1: resolve calendar_id (fetch calendar list and find primary if not provided)
       let calendarId = typeof params.calendar_id === 'string' && params.calendar_id.trim()
         ? params.calendar_id.trim()
         : null;
 
       if (!calendarId) {
-        const primaryRes = await fetch(
-          `${config.larkDomain}/open-apis/calendar/v4/calendars/primary`,
+        const listRes = await fetch(
+          `${config.larkDomain}/open-apis/calendar/v4/calendars`,
           {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${userAccessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ user_id_type: 'open_id' }),
+            headers: { Authorization: `Bearer ${userAccessToken}` },
           }
         );
-        if (!primaryRes.ok) {
-          return `Error: プライマリカレンダー取得に失敗しました (HTTP ${primaryRes.status})`;
+        if (!listRes.ok) {
+          return `Error: カレンダー一覧取得に失敗しました (HTTP ${listRes.status})`;
         }
-        const primaryData = await primaryRes.json() as {
+        const listData = await listRes.json() as {
           code: number;
-          data?: { calendars?: Array<{ calendar?: { calendar_id?: string } }> };
+          msg?: string;
+          data?: { calendar_list?: Array<{ calendar_id?: string; type?: string }> };
         };
-        calendarId =
-          primaryData.data?.calendars?.[0]?.calendar?.calendar_id ?? null;
+        if (listData.code !== 0) {
+          return `Error: Lark API エラー [code: ${listData.code}] ${listData.msg ?? ''}`;
+        }
+        const calendars = listData.data?.calendar_list ?? [];
+        const primary = calendars.find((c) => c.type === 'primary') ?? calendars[0];
+        calendarId = primary?.calendar_id ?? null;
         if (!calendarId) {
           return 'Error: プライマリカレンダーIDが取得できませんでした。';
         }
@@ -138,7 +138,7 @@ export const calendarEventListTool: CustomTool = {
         query.set('end_time', params.end_time.trim());
       }
       const pageSize = typeof params.page_size === 'number' ? params.page_size : 50;
-      query.set('page_size', String(Math.min(pageSize, 500)));
+      query.set('page_size', String(Math.min(Math.max(pageSize, 50), 1000)));
 
       const url = `${config.larkDomain}/open-apis/calendar/v4/calendars/${encodeURIComponent(calendarId)}/events?${query.toString()}`;
       logger.debug(`calendarEvent.list → GET ${url}`);
