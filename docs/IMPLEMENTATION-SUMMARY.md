@@ -240,8 +240,8 @@ vercel --prod
 LARK_APP_ID=cli_xxxxxxxxxxxxxxxx
 LARK_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 GLM_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxx
-UPSTASH_REDIS_REST_URL=https://xxxxxxxx.upstash.io
-UPSTASH_REDIS_REST_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+KV_REST_API_URL=https://xxxxxxxx.upstash.io
+KV_REST_API_READ_ONLY_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 **オプション**（デフォルト値あり）:

@@ -46,6 +46,6 @@ npm start             # Run from dist/
 This project uses npm. Required env vars:
 - `LARK_APP_ID`, `LARK_APP_SECRET`
 - `GLM_API_KEY`, `GLM_API_BASE_URL`, `GLM_MODEL`
-- `UPSTASH_REDIS_*` (optional - production only)
+- `KV_REST_API_URL`, `KV_REST_API_READ_ONLY_TOKEN` (optional - production only)
 
 See @README.md for full setup instructions.

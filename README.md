@@ -96,7 +96,7 @@ graph TB
   - Bitableツールの path パラメータ正規化（`app_token`/`table_id` 等を `path` サブオブジェクトへ）
   - フィールドの JSON 文字列自動パース、`data.table` への統合
 - `ConversationStorage`
-  - `UPSTASH_REDIS_*` が設定されていれば Redis、未設定なら Memory を利用
+  - `KV_REST_API_URL` / `KV_REST_API_READ_ONLY_TOKEN` が設定されていれば Redis、未設定なら Memory を利用
 
 ### メッセージ処理シーケンス
 
@@ -186,8 +186,8 @@ sequenceDiagram
 vercel --prod
 
 # 2. 環境変数を設定（Vercel Dashboard）
-UPSTASH_REDIS_REST_URL=https://...
-UPSTASH_REDIS_REST_TOKEN=...
+KV_REST_API_URL=https://...
+KV_REST_API_READ_ONLY_TOKEN=...
 ```
 
 

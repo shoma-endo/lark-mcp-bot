@@ -19,8 +19,8 @@ function extractDedupIds(body: unknown): { eventId: string | null; messageId: st
 }
 
 async function acquireDedupLock(key: string, ttlSeconds: number): Promise<boolean> {
-  const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
-  const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+  const redisUrl = process.env.KV_REST_API_URL;
+  const redisToken = process.env.KV_REST_API_READ_ONLY_TOKEN;
 
   // If Redis is not configured, keep processing rather than blocking webhook flow.
   if (!redisUrl || !redisToken) return true;

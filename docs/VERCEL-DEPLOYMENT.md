@@ -24,8 +24,8 @@
    - **Eviction**: `No Eviction` （会話履歴を保持）
 
 4. 作成後、以下の情報をコピー:
-   - `UPSTASH_REDIS_REST_URL`
-   - `UPSTASH_REDIS_REST_TOKEN`
+   - `KV_REST_API_URL`
+   - `KV_REST_API_READ_ONLY_TOKEN`
 
 ### Step 2: Vercelプロジェクトの作成
 
@@ -46,8 +46,8 @@ vercel env add LARK_APP_ID production
 vercel env add LARK_APP_SECRET production
 vercel env add GLM_API_KEY production
 vercel env add GLM_API_BASE_URL production
-vercel env add UPSTASH_REDIS_REST_URL production
-vercel env add UPSTASH_REDIS_REST_TOKEN production
+vercel env add KV_REST_API_URL production
+vercel env add KV_REST_API_READ_ONLY_TOKEN production
 
 # ログ設定（オプション）
 vercel env add LOG_LEVEL production
@@ -74,8 +74,8 @@ LARK_APP_ID=cli_xxxxxxxxxxxxxxxx
 LARK_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 GLM_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxx
 GLM_API_BASE_URL=https://api.z.ai/api/coding/paas/v4
-UPSTASH_REDIS_REST_URL=https://xxxxxxxx.upstash.io
-UPSTASH_REDIS_REST_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+KV_REST_API_URL=https://xxxxxxxx.upstash.io
+KV_REST_API_READ_ONLY_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 **オプション**:
