@@ -143,12 +143,13 @@ export const calendarEventListTool: CustomTool = {
       };
 
       const query = new URLSearchParams();
-      const startTs = toUnixSec(params.start_time);
-      const endTs = toUnixSec(params.end_time);
-      if (startTs) query.set('start_time', startTs);
-      if (endTs) query.set('end_time', endTs);
+      const now = Math.floor(Date.now() / 1000);
+      const startTs = toUnixSec(params.start_time) ?? String(now);
+      const endTs = toUnixSec(params.end_time) ?? String(now + 7 * 24 * 60 * 60);
+      query.set('start_time', startTs);
+      query.set('end_time', endTs);
       const pageSize = typeof params.page_size === 'number' ? params.page_size : 50;
-      query.set('page_size', String(Math.min(Math.max(pageSize, 1), 1000)));
+      query.set('page_size', String(Math.min(Math.max(pageSize, 1), 500)));
 
       const url = `${config.larkDomain}/open-apis/calendar/v4/calendars/${encodeURIComponent(calendarId)}/events?${query.toString()}`;
       logger.debug(`calendarEvent.list → GET ${url}`);
