@@ -1,9 +1,9 @@
-# 权限管理
+# 権限管理
 
-## 核心规则
+## コアルール
 
 ```yaml
-# member_type 必须与 member_id 匹配
+# member_type は member_id と一致している必要がある
 member_type: "openid"
 member_id: "ou_xxxxx"
 
@@ -11,10 +11,10 @@ member_type: "email"
 member_id: "user@example.com"
 ```
 
-## 添加权限
+## 権限の追加
 
 ```yaml
-工具: mcp__lark-mcp__drive_v1_permissionMember_create
+ツール: mcp__lark-mcp__drive_v1_permissionMember_create
 path:
   token: "doxcnxxxxxx"
 data:
@@ -35,25 +35,25 @@ useUAT: true
 | `openchat` | `oc_xxxxx` |
 | `opendepartmentid` | `od_xxxxx` |
 
-## 权限类型
+## 権限タイプ
 
-| perm | 说明 |
+| perm | 説明 |
 |------|------|
-| `view` | 只读 |
-| `edit` | 可编辑 |
-| `full_access` | 完全控制 |
+| `view` | 閲覧のみ |
+| `edit` | 編集可能 |
+| `full_access` | 完全制御 |
 
-## 资源类型
+## リソースタイプ
 
-| type | token 格式 |
-|------|-----------|
+| type | token フォーマット |
+|------|-------------------|
 | `docx` | `doxcnxxxxxx` |
-| `sheet` | 表格 token |
+| `sheet` | スプレッドシートトークン |
 | `bitable` | `bascnxxxxxx` |
 
-## 常见错误
+## よくあるエラー
 
-| 错误 | 解决 |
-|------|------|
-| member not found | 检查 member_type 和 member_id 匹配 |
-| 1063001 | 外部邮箱权限需用户身份 |
+| エラー | 解決策 |
+|--------|--------|
+| member not found | member_type と member_id の一致を確認 |
+| 1063001 | 外部メール権限にはユーザー権限が必要 |

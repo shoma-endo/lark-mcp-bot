@@ -1,49 +1,49 @@
-# 通用概念
+# 共通概念
 
-## 参数结构
+## パラメータ構造
 
 ```yaml
-path: {app_token, table_id, chat_id}  # URL路径参数
-params: {page_size, user_id_type}     # 查询参数
-data: {fields, content, ...}          # 请求体
-useUAT: false                         # true=用户身份, false=租户身份
+path: {app_token, table_id, chat_id}  # URLパスパラメータ
+params: {page_size, user_id_type}     # クエリパラメータ
+data: {fields, content, ...}          # リクエストボディ
+useUAT: false                         # true=ユーザー権限, false=テナント権限
 ```
 
-## useUAT 选择
+## useUAT の選択基準
 
-| 场景 | useUAT | 说明 |
-|------|:------:|------|
-| 创建资源 | `true` | 创建者=当前用户 |
-| 访问用户私有数据 | `true` | 需要用户权限 |
-| 查询公共数据 | `false` | 默认，租户身份 |
+| シナリオ | useUAT | 説明 |
+|----------|:------:|------|
+| リソース作成 | `true` | 作成者=現在のユーザー |
+| ユーザーのプライベートデータへのアクセス | `true` | ユーザー権限が必要 |
+| パブリックデータのクエリ | `false` | デフォルト、テナント権限 |
 
-## ID 类型
+## IDタイプ
 
-| 前缀 | 类型 | 来源 |
-|------|------|------|
-| `ou_` | 用户ID | API返回 |
-| `oc_` | 群聊ID | `im_v1_chat_list` 或 URL |
-| `bascn` | 多维表格 | URL中 `base/` 后 |
-| `tbl` | 数据表 | URL参数 `table=` |
-| `rec` | 记录ID | API返回 |
-| `doxcn` | 文档 | 搜索结果或URL |
-| `wikcn` | 知识库节点 | 知识库URL |
+| プレフィックス | タイプ | 取得元 |
+|--------------|--------|--------|
+| `ou_` | ユーザーID | APIレスポンス |
+| `oc_` | グループチャットID | `im_v1_chat_list` またはURL |
+| `bascn` | Bitable（データベース） | URLの `base/` の後ろ |
+| `tbl` | データテーブル | URLパラメータ `table=` |
+| `rec` | レコードID | APIレスポンス |
+| `doxcn` | ドキュメント | 検索結果またはURL |
+| `wikcn` | Wikiノード | WikiのURL |
 
-## 分页
+## ページネーション
 
 ```yaml
 params:
   page_size: 50
-  page_token: ""  # 首次为空，后续用返回值
+  page_token: ""  # 最初は空、以降は返り値を使用
 ```
 
-响应包含 `has_more` 和 `page_token`。
+レスポンスには `has_more` と `page_token` が含まれます。
 
-## 错误码
+## エラーコード
 
-| 错误码 | 解决 |
-|--------|------|
-| 99991663 | `useUAT: true` 或配置 OAuth |
-| 131005 | 检查 token 类型和权限 |
-| 230001 | 检查 chat_id 格式 |
-| 1063001 | 外部邮箱权限需用户身份 |
+| エラーコード | 解決策 |
+|--------------|--------|
+| 99991663 | `useUAT: true` またはOAuthを設定 |
+| 131005 | tokenタイプと権限を確認 |
+| 230001 | chat_idのフォーマットを確認 |
+| 1063001 | 外部メール権限にはユーザー権限が必要 |

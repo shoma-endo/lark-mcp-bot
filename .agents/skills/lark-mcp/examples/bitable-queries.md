@@ -1,69 +1,69 @@
-# Bitable 查询示例
+# Bitable クエリ例
 
-## 常用查询
+## よく使うクエリ
 
-### 精确匹配
+### 完全一致
 ```yaml
 data:
   filter:
     conjunction: "and"
     conditions:
-      - field_name: "状态"
+      - field_name: "ステータス"
         operator: "is"
-        value: ["已完成"]
+        value: ["完了"]
 ```
 
-### 文本包含
+### テキスト部分一致
 ```yaml
 data:
   filter:
     conditions:
-      - field_name: "任务名称"
+      - field_name: "タスク名"
         operator: "contains"
-        value: ["关键词"]
+        value: ["キーワード"]
 ```
 
-### 数值/日期范围
+### 数値/日付範囲
 ```yaml
 data:
   filter:
     conditions:
-      - field_name: "优先级"
+      - field_name: "優先度"
         operator: "isGreater"
         value: ["3"]
 ```
 
-### 空值检查
+### 空値チェック
 ```yaml
 data:
   filter:
     conditions:
-      - field_name: "负责人"
+      - field_name: "担当者"
         operator: "isEmpty"
         value: []
 ```
 
-### 多条件
+### 複数条件
 ```yaml
 data:
   filter:
-    conjunction: "and"  # 或 "or"
+    conjunction: "and"  # または "or"
     conditions:
-      - field_name: "状态"
+      - field_name: "ステータス"
         operator: "is"
-        value: ["待处理"]
-      - field_name: "优先级"
+        value: ["未処理"]
+      - field_name: "優先度"
         operator: "isGreater"
         value: ["3"]
 ```
 
-## 操作符
+## 演算子
 
-| operator | 适用类型 |
-|----------|----------|
-| is | 所有 |
-| isNot | 除日期外 |
-| contains | 文本 |
-| isEmpty | 所有 |
-| isGreater | 数字、日期 |
-| isLess | 数字、日期 |
+| operator | 対応タイプ |
+|----------|------------|
+| is | すべてのタイプ |
+| isNot | 日付タイプを除くすべて |
+| contains | テキスト |
+| isEmpty | すべてのタイプ |
+| isGreater | 数値、日付 |
+| isLess | 数値、日付 |

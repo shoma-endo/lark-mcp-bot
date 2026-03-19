@@ -1,9 +1,9 @@
-# 联系人
+# 連絡先
 
-## 通过邮箱/手机号获取用户ID
+## メールアドレス/電話番号からユーザーIDを取得
 
 ```yaml
-工具: mcp__lark-mcp__contact_v3_user_batchGetId
+ツール: mcp__lark-mcp__contact_v3_user_batchGetId
 data:
   emails: ["user@example.com"]
   mobiles: ["+8613800138000"]
@@ -11,9 +11,9 @@ params:
   user_id_type: "open_id"
 ```
 
-**注意**: 手机号格式为 `国家码+号码`，如 `+8613800138000`
+**注意**: 電話番号は `国番号+番号` の形式、例: `+8613800138000`
 
-## 响应
+## レスポンス
 
 ```json
 {
@@ -26,16 +26,16 @@ params:
 }
 ```
 
-## 典型场景
+## 典型的なシナリオ
 
 ```yaml
-# 1. 通过手机号获取 open_id
-工具: mcp__lark-mcp__contact_v3_user_batchGetId
+# 1. 電話番号から open_id を取得
+ツール: mcp__lark-mcp__contact_v3_user_batchGetId
 data:
   mobiles: ["+8613800138000"]
 
-# 2. 使用 open_id 添加权限
-工具: mcp__lark-mcp__drive_v1_permissionMember_create
+# 2. open_id で権限を追加
+ツール: mcp__lark-mcp__drive_v1_permissionMember_create
 data:
   member_type: "openid"
   member_id: "ou_xxxxx"

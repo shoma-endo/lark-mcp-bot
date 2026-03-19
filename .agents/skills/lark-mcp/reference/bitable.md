@@ -1,17 +1,17 @@
-# 多维表格 (Bitable)
+# Bitable（データベース）
 
-## 核心规则
+## コアルール
 
 ```yaml
-# 创建资源用用户身份
+# リソース作成にはユーザー権限を使用
 useUAT: true
 
-# 过滤条件 value 必须是数组
-✅ value: ["已完成"]
-❌ value: "已完成"
+# フィルタ条件の value は配列形式である必要がある
+✅ value: ["完了"]
+❌ value: "完了"
 
-# 使用 field_name 而非 field_id
-field_name: "状态"
+# フィールド名として field_name を使用（field_idではない）
+field_name: "ステータス"
 ```
 
 ## URL 解析
@@ -21,45 +21,45 @@ https://xxx.feishu.cn/base/bascnxxxxxx?table=tblxxxxxx
                          ↑app_token         ↑table_id
 ```
 
-## 工作流
+## ワークフロー
 
-### 1. 创建 Base
+### 1. Base作成
 
 ```yaml
-工具: mcp__lark-mcp__bitable_v1_app_create
+ツール: mcp__lark-mcp__bitable_v1_app_create
 data:
   name: "Base名称"
 useUAT: true
 ```
 
-返回 `app_token` 和 `default_table_id`。
+`app_token` と `default_table_id` が返されます。
 
-### 2. 创建数据表
+### 2. データテーブル作成
 
 ```yaml
-工具: mcp__lark-mcp__bitable_v1_appTable_create
+ツール: mcp__lark-mcp__bitable_v1_appTable_create
 path:
   app_token: "bascnxxxxxx"
 data:
   table:
-    name: "表名"
+    name: "テーブル名"
     fields:
-      - field_name: "文本"
+      - field_name: "テキスト"
         ui_type: "Text"
-      - field_name: "单选"
+      - field_name: "単一選択"
         ui_type: "SingleSelect"
         property:
           options:
-            - name: "选项1"
-      - field_name: "日期"
+            - name: "オプション1"
+      - field_name: "日時"
         ui_type: "DateTime"
 useUAT: true
 ```
 
-### 3. 查询记录
+### 3. レコード検索
 
 ```yaml
-工具: mcp__lark-mcp__bitable_v1_appTableRecord_search
+ツール: mcp__lark-mcp__bitable_v1_appTableRecord_search
 path:
   app_token: "bascnxxxxxx"
   table_id: "tblxxxxxx"
@@ -67,82 +67,82 @@ data:
   filter:
     conjunction: "and"
     conditions:
-      - field_name: "状态"
+      - field_name: "ステータス"
         operator: "is"
-        value: ["已完成"]
+        value: ["完了"]
 ```
 
-### 4. 创建记录
+### 4. レコード作成
 
 ```yaml
-工具: mcp__lark-mcp__bitable_v1_appTableRecord_create
+ツール: mcp__lark-mcp__bitable_v1_appTableRecord_create
 path:
   app_token: "bascnxxxxxx"
   table_id: "tblxxxxxx"
 data:
   fields:
-    文本字段: "值"
-    单选字段: "选项名"
-    日期字段: 1705276800000
+    テキストフィールド: "値"
+    単一選択フィールド: "オプション名"
+    日付フィールド: 1705276800000
 useUAT: true
 ```
 
-### 5. 更新记录
+### 5. レコード更新
 
 ```yaml
-工具: mcp__lark-mcp__bitable_v1_appTableRecord_update
+ツール: mcp__lark-mcp__bitable_v1_appTableRecord_update
 path:
   app_token: "bascnxxxxxx"
   table_id: "tblxxxxxx"
   record_id: "recxxxxxx"
 data:
   fields:
-    状态: "已完成"
+    ステータス: "完了"
 useUAT: true
 ```
 
-## 字段类型
+## フィールドタイプ
 
-| ui_type | 说明 | 示例值 |
-|---------|------|--------|
-| Text | 文本 | `"内容"` |
-| Number | 数字 | `123` |
-| SingleSelect | 单选 | `"选项名"` |
-| MultiSelect | 多选 | `["选项1", "选项2"]` |
-| DateTime | 日期 | `1705276800000` (毫秒) |
-| User | 人员 | `"ou_xxxxx"` |
-| Checkbox | 复选框 | `true`/`false` |
+| ui_type | 説明 | 例 |
+|---------|------|-----|
+| Text | テキスト | `"内容"` |
+| Number | 数値 | `123` |
+| SingleSelect | 単一選択 | `"オプション名"` |
+| MultiSelect | 複数選択 | `["オプション1", "オプション2"]` |
+| DateTime | 日時 | `1705276800000` (ミリ秒) |
+| User | ユーザー | `"ou_xxxxx"` |
+| Checkbox | チェックボックス | `true`/`false` |
 
-## 操作符
+## 演算子
 
-| operator | 说明 |
+| operator | 説明 |
 |----------|------|
-| `is` | 等于 |
-| `isNot` | 不等于 |
-| `contains` | 包含 |
-| `isEmpty` | 为空 |
-| `isGreater` | 大于 |
-| `isLess` | 小于 |
+| `is` | 等しい |
+| `isNot` | 等しくない |
+| `contains` | 含む |
+| `isEmpty` | 空である |
+| `isGreater` | より大きい |
+| `isLess` | より小さい |
 
-## 辅助工具
+## 補助ツール
 
 ```yaml
-# 获取数据表列表
-工具: mcp__lark-mcp__bitable_v1_appTable_list
+# データテーブル一覧を取得
+ツール: mcp__lark-mcp__bitable_v1_appTable_list
 path:
   app_token: "bascnxxxxxx"
 
-# 获取字段列表
-工具: mcp__lark-mcp__bitable_v1_appTableField_list
+# フィールド一覧を取得
+ツール: mcp__lark-mcp__bitable_v1_appTableField_list
 path:
   app_token: "bascnxxxxxx"
   table_id: "tblxxxxxx"
 ```
 
-## 常见错误
+## よくあるエラー
 
-| 错误 | 解决 |
-|------|------|
-| field not found | 用 `appTableField_list` 确认字段名 |
-| invalid filter | value 使用数组格式 `["值"]` |
-| 创建后无法访问 | 使用 `useUAT: true` |
+| エラー | 解決策 |
+|--------|--------|
+| field not found | `appTableField_list` でフィールド名を確認 |
+| invalid filter | value は配列形式 `["値"]` を使用 |
+| 作成後にアクセスできない | `useUAT: true` を使用 |

@@ -1,137 +1,138 @@
 ---
 name: lark-mcp
-description: 飞书/Lark 官方 MCP 集成。支持发送消息、创建群组、操作多维表格（Bitable）、导入/搜索文档、知识库查询。触发词：飞书、Feishu、Lark、多维表格、bitable、飞书文档、飞书群。
+description: 飞書/Lark公式MCP統合。メッセージ送信、グループ作成、Bitable（データベース）操作、ドキュメントインポート/検索、Wiki（ナレッジベース）検索をサポート。トリガーワード：飛書、Feishu、Lark、Bitable、bitable、飛書ドキュメント、飛書グループ。
 ---
 
 # Lark MCP
 
-## ⚠️ 重要提醒
+## ⚠️ 重要な注意点
 
-**搜索文档/知识库必须配置 OAuth**：
-- `docx_builtin_search` → 需要 `--oauth`
-- `wiki_v1_node_search` → 需要 `--oauth`
+**ドキュメント検索とWiki検索にはOAuth設定が必要**：
+- `docx_builtin_search` → `--oauth` が必要
+- `wiki_v1_node_search` → `--oauth` が必要
 
-否则返回 99991663 错误。配置方法见 [installation.md](reference/installation.md#oauth-配置)
+設定しないとエラー 99991663 が返されます。設定方法は [installation.md](reference/installation.md#oauth-配置) を参照
 
 ---
 
-## 核心规则
+## コアルール
 
 ```yaml
-# 工具命名（连字符，非下划线）
+# ツール命名（ハイフン、アンダースコアではない）
 ✅ mcp__lark-mcp__tool_name
 ❌ mcp__lark_mcp__tool_name
 
-# 参数结构
-path: {app_token, table_id}   # URL路径参数
-params: {page_size, ...}      # 查询参数
-data: {fields, ...}           # 请求体
-useUAT: false                 # true=用户身份, false=租户身份
+# パラメータ構造
+path: {app_token, table_id}   # URLパスパラメータ
+params: {page_size, ...}      # クエリパラメータ
+data: {fields, ...}           # リクエストボディ
+useUAT: false                 # true=ユーザー権限, false=テナント権限
 ```
 
-## 常见陷阱
+## よくある落とし穴
 
 ```yaml
-# content 必须是 JSON 字符串
+# contentはJSON文字列である必要がある
 ❌ content: {"text": "hello"}
 ✅ content: '{"text": "hello"}'
 
-# 过滤条件 value 必须是数组
-❌ value: "已完成"
-✅ value: ["已完成"]
+# フィルタ条件のvalueは配列である必要がある
+❌ value: "完了"
+✅ value: ["完了"]
 
-# 创建群组必须指定 owner_id，否则群主为机器人
+# グループ作成時はowner_idを指定しないとボットがオーナーになる
 owner_id: "ou_xxxxx"
 
-# 参数名差异
-docx_builtin_search: search_key  # 不是 query
-wiki_v1_node_search: query       # 不是 search_key
+# パラメータ名の違いに注意
+docx_builtin_search: search_key  # queryではない
+wiki_v1_node_search: query       # search_keyではない
 
-# token 类型
-wiki_v2_space_getNode: 用 wikcn...  # 不能用 doxcn...
-docx_v1_document_rawContent: 用 doxcn...
+# トークンタイプの違い
+wiki_v2_space_getNode: wikcn...  # doxcn...は使えない
+docx_v1_document_rawContent: doxcn...
 ```
 
-## useUAT 选择
+## useUATの選択基準
 
-| 场景 | useUAT |
-|------|:------:|
-| 创建资源（想让用户可访问） | `true` |
-| 搜索文档/知识库 | `true` |
-| 访问用户私有数据 | `true` |
-| 查询公共数据 | `false` |
+| シナリオ | useUAT |
+|----------|:------:|
+| リソース作成（ユーザーがアクセスできるようにする場合） | `true` |
+| ドキュメント検索・Wiki検索 | `true` |
+| ユーザーのプライベートデータへのアクセス | `true` |
+| パブリックデータのクエリ | `false` |
 
-## 工具速查
+## ツールクイックリファレンス
 
-| 类别 | 工具 | 文档 |
-|------|------|------|
-| 消息 | `im_v1_message_create`, `im_v1_message_list` | [im.md](reference/im.md) |
-| 群组 | `im_v1_chat_create`, `im_v1_chat_list`, `im_v1_chatMembers_get` | [chat.md](reference/chat.md) |
-| 多维表格 | `bitable_v1_app_create`, `bitable_v1_appTableRecord_search/create/update` | [bitable.md](reference/bitable.md) |
-| 文档 | `docx_builtin_search`, `docx_v1_document_rawContent`, `docx_builtin_import` | [documents.md](reference/documents.md) |
-| 知识库 | `wiki_v1_node_search`, `wiki_v2_space_getNode` | [wiki.md](reference/wiki.md) |
+| カテゴリ | ツール | ドキュメント |
+|----------|------|------|
+| メッセージ | `im_v1_message_create`, `im_v1_message_list` | [im.md](reference/im.md) |
+| グループ | `im_v1_chat_create`, `im_v1_chat_list`, `im_v1_chatMembers_get` | [chat.md](reference/chat.md) |
+| Bitable（データベース） | `bitable_v1_app_create`, `bitable_v1_appTableRecord_search/create/update` | [bitable.md](reference/bitable.md) |
+| ドキュメント | `docx_builtin_search`, `docx_v1_document_rawContent`, `docx_builtin_import` | [documents.md](reference/documents.md) |
+| Wiki（ナレッジベース） | `wiki_v1_node_search`, `wiki_v2_space_getNode` | [wiki.md](reference/wiki.md) |
 
-## ID 类型
+## IDタイプ
 
-| 前缀 | 类型 | 来源 |
-|------|------|------|
-| `ou_` | 用户ID | API返回 |
-| `oc_` | 群聊ID | `im_v1_chat_list` |
-| `bascn` | 多维表格 | URL中 `base/` 后 |
-| `tbl` | 数据表 | URL参数 `table=` |
-| `doxcn` | 文档 | 搜索结果或URL |
-| `wikcn` | 知识库节点 | 知识库URL |
+| プレフィックス | タイプ | 取得元 |
+|--------------|--------|--------|
+| `ou_` | ユーザーID | APIレスポンスから取得 |
+| `oc_` | グループID | `im_v1_chat_list` から取得 |
+| `bascn` | Bitable（データベース） | URLの `base/` の後ろ |
+| `tbl` | テーブル | URLパラメータ `table=` |
+| `doxcn` | ドキュメント | 検索結果またはURL |
+| `wikcn` | Wikiノード（ナレッジベース） | WikiのURL |
 
-## 快速示例
+## クイック例
 
 ```yaml
-# 发送消息
-工具: mcp__lark-mcp__im_v1_message_create
+# テキストメッセージを送信
+ツール: mcp__lark-mcp__im_v1_message_create
 data:
-  receive_id: "oc_xxxxx"
+  receive_id: "oc_xxxxx"  # グループID
   msg_type: "text"
-  content: '{"text": "消息内容"}'
+  content: '{"text": "こんにちは！これはテストメッセージです。"}'
 params:
   receive_id_type: "chat_id"
 
-# 创建群组
-工具: mcp__lark-mcp__im_v1_chat_create
+# 新しいグループを作成
+ツール: mcp__lark-mcp__im_v1_chat_create
 data:
-  name: "群名"
-  chat_mode: "group"
-  owner_id: "ou_xxxxx"
-  user_id_list: ["ou_xxxxx"]
+  name: "プロジェクトチーム"
+  chat_mode: "group"  # グループチャット
+  owner_id: "ou_xxxxx"  # グループ管理者のユーザーID
+  user_id_list: ["ou_xxxxx"]  # グループメンバーのユーザーIDリスト
 params:
-  user_id_type: "open_id"
+  user_id_type: "open_id"  # ユーザーIDのタイプ
 
-# 创建多维表格记录
-工具: mcp__lark-mcp__bitable_v1_appTableRecord_create
+# Bitableにレコードを作成
+ツール: mcp__lark-mcp__bitable_v1_appTableRecord_create
 path:
-  app_token: "bascnxxxxxx"
-  table_id: "tblxxxxxx"
+  app_token: "bascnxxxxxx"  # Bitableのトークン
+  table_id: "tblxxxxxx"    # テーブルID
 data:
   fields:
-    文本字段: "值"
-    单选字段: "选项名"
-useUAT: true
+    タスク名: "要件定義"
+    ステータス: "進行中"
+    優先度: "高"
+useUAT: true  # ユーザー権限で実行
 
-# 搜索文档
-工具: mcp__lark-mcp__docx_builtin_search
+# ドキュメントをキーワード検索
+ツール: mcp__lark-mcp__docx_builtin_search
 data:
-  search_key: "关键词"
-  count: 10
-useUAT: true
+  search_key: "プロジェクト計画"  # 検索キーワード
+  count: 10  # 取得件数
+useUAT: true  # OAuthが必要
 ```
 
-## 错误速查
+## エラー対処表
 
-| 错误 | 原因 | 解决 |
-|------|------|------|
-| tool not found | 服务器名错误 | 使用 `mcp__lark-mcp__` 前缀 |
-| 99991663 | 权限不足 | `useUAT: true` 或配置 OAuth |
-| 131005 not found | token 类型错误 | 检查用 `wikcn` 还是 `doxcn` |
-| 创建资源无法访问 | 租户身份创建 | 使用 `useUAT: true` |
-| field not found | 字段名错误 | 用 `appTableField_list` 确认 |
-| invalid content | 格式错误 | content 用单引号包裹 JSON |
+| エラー | 原因 | 対処法 |
+|--------|------|--------|
+| tool not found | サーバー名が間違っている | `mcp__lark-mcp__` プレフィックスを使用 |
+| 99991663 | 権限不足 | `useUAT: true` またはOAuthを設定 |
+| 131005 not found | IDタイプが間違っている（wikcnとdoxcnの使い分け） | `wikcn` はWikiノード、`doxcn` はドキュメントで使用 |
+| 作成したリソースにアクセスできない | テナント権限で作成した | `useUAT: true` を使用 |
+| field not found | フィールド名が間違っている | `appTableField_list` で確認 |
+| invalid content | フォーマットエラー | contentをJSONとしてシングルクォートで囲む |
 
-**详细文档**: [troubleshooting.md](reference/troubleshooting.md) | [installation.md](reference/installation.md)
+**詳細ドキュメント**: [troubleshooting.md](reference/troubleshooting.md) | [installation.md](reference/installation.md)

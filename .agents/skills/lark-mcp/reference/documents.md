@@ -1,100 +1,100 @@
-# 文档操作
+# ドキュメント操作
 
-## 核心规则
+## コアルール
 
 ```yaml
-# 搜索文档必须使用用户身份
+# ドキュメント検索にはユーザー権限を使用
 useUAT: true
 
-# 参数名注意
-docx_builtin_search: search_key  # 不是 query
-wiki_v1_node_search: query       # 不是 search_key
+# パラメータ名に注意
+docx_builtin_search: search_key  # queryではない
+wiki_v1_node_search: query       # search_keyではない
 ```
 
-## 搜索文档
+## ドキュメント検索
 
 ```yaml
-工具: mcp__lark-mcp__docx_builtin_search
+ツール: mcp__lark-mcp__docx_builtin_search
 data:
-  search_key: "关键词"
+  search_key: "キーワード"
   count: 20
 useUAT: true
 ```
 
-响应：
+レスポンス：
 ```json
 {
   "docs_entities": [
     {
       "docs_token": "doxcnxxxxxx",
-      "title": "文档标题",
+      "title": "ドキュメントタイトル",
       "docs_type": "docx"
     }
   ]
 }
 ```
 
-## 获取文档内容
+## ドキュメント内容の取得
 
 ```yaml
-工具: mcp__lark-mcp__docx_v1_document_rawContent
+ツール: mcp__lark-mcp__docx_v1_document_rawContent
 path:
   document_id: "doxcnxxxxxx"
 params:
-  lang: 0  # 0=中文, 1=英文
+  lang: 0  # 0=中国語, 1=英語
 useUAT: true
 ```
 
-## 导入 Markdown
+## Markdownのインポート
 
 ```yaml
-工具: mcp__lark-mcp__docx_builtin_import
+ツール: mcp__lark-mcp__docx_builtin_import
 data:
-  markdown: "# 标题\n\n正文内容..."
-  file_name: "文档.md"
+  markdown: "# タイトル\n\n本文内容..."
+  file_name: "ドキュメント.md"
 useUAT: true
 ```
 
-返回文档 URL 和 token。
+ドキュメントのURLとtokenが返されます。
 
-## docs_types 可选值
+## docs_typesの選択肢
 
-| 类型 | 说明 |
+| タイプ | 説明 |
 |------|------|
-| `docx` | 新版文档 |
-| `doc` | 旧版文档 |
-| `sheet` | 电子表格 |
-| `bitable` | 多维表格 |
-| `mindnote` | 思维导图 |
-| `file` | 云空间文件 |
+| `docx` | 新版ドキュメント |
+| `doc` | 旧版ドキュメント |
+| `sheet` | スプレッドシート |
+| `bitable` | Bitable（データベース） |
+| `mindnote` | マインドマップ |
+| `file` | クラウドファイル |
 
-## 从 URL 获取 document_id
+## URLから document_id を取得
 
 ```
 https://xxx.feishu.cn/docx/doxcnxxxxxx
                           ↑ document_id
 ```
 
-## 常见错误
+## よくあるエラー
 
-| 错误 | 解决 |
-|------|------|
-| User access token not configured | 配置 OAuth |
-| permission denied | 使用 `useUAT: true` |
-| document not found | 检查 document_id |
+| エラー | 解決策 |
+|--------|--------|
+| User access token not configured | OAuthを設定 |
+| permission denied | `useUAT: true` を使用 |
+| document not found | document_idを確認 |
 
-## 工作流：导入并分享
+## ワークフロー：インポートして共有
 
 ```yaml
-# 1. 导入 Markdown
-工具: mcp__lark-mcp__docx_builtin_import
+# 1. Markdownをインポート
+ツール: mcp__lark-mcp__docx_builtin_import
 data:
-  markdown: "# 报告\n\n内容..."
+  markdown: "# レポート\n\n内容..."
 
-# 2. 添加权限（使用返回的 token）
-工具: mcp__lark-mcp__drive_v1_permissionMember_create
+# 2. 権限を追加（返されたtokenを使用）
+ツール: mcp__lark-mcp__drive_v1_permissionMember_create
 path:
-  token: "返回的token"
+  token: "返されたtoken"
 params:
   type: "docx"
 data:

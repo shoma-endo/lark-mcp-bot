@@ -1,83 +1,83 @@
-# 消息操作
+# メッセージ操作
 
-## 核心规则
+## コアルール
 
 ```yaml
-# content 必须是 JSON 字符串
+# content はJSON文字列である必要がある
 ❌ content: {"text": "hello"}
 ✅ content: '{"text": "hello"}'
 
-# receive_id_type 必须匹配 receive_id 类型
+# receive_id_type は receive_id のタイプと一致している必要がある
 receive_id: "oc_xxxxx"
 receive_id_type: "chat_id"
 ```
 
-## 发送消息
+## メッセージ送信
 
 ```yaml
-工具: mcp__lark-mcp__im_v1_message_create
+ツール: mcp__lark-mcp__im_v1_message_create
 data:
   receive_id: "oc_xxxxx"
   msg_type: "text"
-  content: '{"text": "消息内容"}'
+  content: '{"text": "メッセージ内容"}'
 params:
   receive_id_type: "chat_id"
 ```
 
-### 消息类型
+### メッセージタイプ
 
 | msg_type | content |
 |----------|---------|
-| text | `{"text": "文本"}` |
-| post | 富文本 JSON |
+| text | `{"text": "テキスト"}` |
+| post | リッチテキストJSON |
 | image | `{"image_key": "xxx"}` |
 | file | `{"file_key": "xxx"}` |
 
-### 富文本元素
+### リッチテキスト要素
 
 ```yaml
 content: '{
   "post": {
     "zh_cn": {
-      "title": "标题",
+      "title": "タイトル",
       "content": [
-        [{"tag": "text", "text": "正文"}],
-        [{"tag": "at", "user_id": "ou_xxx", "text": "@张三"}]
+        [{"tag": "text", "text": "本文"}],
+        [{"tag": "at", "user_id": "ou_xxx", "text": "@田中"}]
       ]
     }
   }
 }'
 ```
 
-| 标签 | 示例 |
-|------|------|
-| 文本 | `{"tag": "text", "text": "内容"}` |
-| 加粗 | `{"tag": "text", "text": "内容", "style": ["bold"]}` |
-| 链接 | `{"tag": "a", "text": "文字", "href": "URL"}` |
-| @用户 | `{"tag": "at", "user_id": "ou_xxx"}` |
-| @所有人 | `{"tag": "at", "user_id": "all"}` |
+| タグ | 例 |
+|------|-----|
+| テキスト | `{"tag": "text", "text": "内容"}` |
+| 太字 | `{"tag": "text", "text": "内容", "style": ["bold"]}` |
+| リンク | `{"tag": "a", "text": "文字", "href": "URL"}` |
+| @ユーザー | `{"tag": "at", "user_id": "ou_xxx"}` |
+| @全員 | `{"tag": "at", "user_id": "all"}` |
 
-## 获取消息历史
+## メッセージ履歴の取得
 
 ```yaml
-工具: mcp__lark-mcp__im_v1_message_list
+ツール: mcp__lark-mcp__im_v1_message_list
 params:
   container_id_type: "chat"
   container_id: "oc_xxxxx"
   page_size: 50
 ```
 
-时间范围过滤：
+時間範囲フィルタ：
 ```yaml
 params:
-  start_time: "1705276800"  # 秒级时间戳
+  start_time: "1705276800"  # 秒単位のタイムスタンプ
   end_time: "1705363200"
 ```
 
-## 常见错误
+## よくあるエラー
 
-| 错误 | 解决 |
-|------|------|
-| invalid content format | content 用单引号包裹 JSON |
-| receive_id not found | 检查 receive_id_type 是否匹配 |
-| permission denied | 邀请机器人加入群组 |
+| エラー | 解決策 |
+|--------|--------|
+| invalid content format | contentをシングルクォートでJSONを囲む |
+| receive_id not found | receive_id_typeが一致しているか確認 |
+| permission denied | ボットをグループに招待 |

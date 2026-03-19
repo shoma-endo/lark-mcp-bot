@@ -1,7 +1,7 @@
 {
   "name": "lark-mcp",
   "version": "1.0.0",
-  "description": "集成飞书/Feishu 服务，操作多维表格、文档、消息、群组等",
+  "description": "飛書/Feishu サービスの統合。Bitable（データベース）、ドキュメント、メッセージ、グループなどの操作",
   "author": "whatevertogo",
   "repository": {
     "type": "git",
@@ -27,19 +27,19 @@
   },
   "envHints": {
     "your_app_id": {
-      "description": "飞书应用 ID",
+      "description": "飛書アプリ ID",
       "url": "https://open.feishu.cn/app"
     },
     "your_app_secret": {
-      "description": "飞书应用密钥",
+      "description": "飛書アプリシークレット",
       "url": "https://open.feishu.cn/app",
       "secret": true
     }
   },
   "installNotes": [
-    "安装后请将 <your_app_id> 替换为飞书应用 ID",
-    "安装后请将 <your_app_secret> 替换为飞书应用密钥",
-    "获取凭证请访问：https://open.feishu.cn/app",
-    "详细配置指南：https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/mcp_integration/mcp_installation"
+    "インストール後、<your_app_id> を飛書アプリ ID に置き換えてください",
+    "インストール後、<your_app_secret> を飛書アプリシークレットに置き換えてください",
+    "認証情報の取得: https://open.feishu.cn/app",
+    "設定ガイド: https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/mcp_integration/mcp_installation"
   ]
 }

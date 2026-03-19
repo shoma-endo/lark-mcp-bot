@@ -1,21 +1,21 @@
-# 知识库 (Wiki)
+# Wiki（ナレッジベース）
 
-## ⚠️ 必须配置 OAuth
+## ⚠️ OAuth設定が必要
 
-知识库工具需要用户令牌，否则返回 99991663 错误。
+Wikiツールにはユーザートークンが必要です。設定しないとエラー 99991663 が返されます。
 
-**配置方法**: 见 [installation.md](installation.md#oauth-配置)
+**設定方法**: [installation.md](installation.md#oauth-配置) を参照
 
-## 搜索知识库节点
+## Wikiノードの検索
 
 ```yaml
-工具: mcp__lark-mcp__wiki_v1_node_search
+ツール: mcp__lark-mcp__wiki_v1_node_search
 data:
-  query: "关键词"        # 参数名是 query，不是 search_key
+  query: "キーワード"        # パラメータ名は query（search_keyではない）
   page_size: 20
 ```
 
-响应：
+レスポンス：
 ```json
 {
   "items": [
@@ -23,57 +23,57 @@ data:
       "node_id": "wikcnxxxxxx",
       "obj_token": "doxcnxxxxxx",
       "obj_type": 8,
-      "title": "节点标题"
+      "title": "ノードタイトル"
     }
   ]
 }
 ```
 
-## 获取节点信息
+## ノード情報の取得
 
 ```yaml
-工具: mcp__lark-mcp__wiki_v2_space_getNode
+ツール: mcp__lark-mcp__wiki_v2_space_getNode
 params:
-  token: "wikcnxxxxxx"  # 必须是知识库节点 token
+  token: "wikcnxxxxxx"  # Wikiノードトークンである必要がある
 ```
 
-**注意**: token 必须以 `wik` 开头，不能用文档 token (`doxcn`)。
+**注意**: token は `wik` で始まる必要があります。ドキュメントトークン (`doxcn`) は使用できません。
 
-## Token 类型
+## トークンタイプ
 
-| 前缀 | 类型 | 用途 |
-|------|------|------|
-| `wikcn` | 知识库节点 | `wiki_v2_space_getNode` |
-| `doxcn` | 文档 | `docx_v1_document_rawContent` |
+| プレフィックス | タイプ | 用途 |
+|--------------|------|------|
+| `wikcn` | Wikiノード | `wiki_v2_space_getNode` |
+| `doxcn` | ドキュメント | `docx_v1_document_rawContent` |
 
-## 从 URL 获取 token
+## URLからトークンを取得
 
 ```
-知识库节点: https://xxx.feishu.cn/wiki/wikcnxxxxxx
-                                        ↑ 知识库节点 token
+Wikiノード: https://xxx.feishu.cn/wiki/wikcnxxxxxx
+                                        ↑ Wikiノードトークン
 
-文档: https://xxx.feishu.cn/docx/doxcnxxxxxx
-                                ↑ 文档 token（不能用于 wiki_v2_space_getNode）
+ドキュメント: https://xxx.feishu.cn/docx/doxcnxxxxxx
+                                ↑ ドキュメントトークン（wiki_v2_space_getNodeでは使用不可）
 ```
 
-## 常见错误
+## よくあるエラー
 
-| 错误 | 原因 | 解决 |
-|------|------|------|
-| 99991663 | 未配置用户令牌 | 配置 OAuth |
-| 131005 document not in wiki | 使用了文档 token | 使用 `wikcn` 开头的节点 token |
+| エラー | 原因 | 解決策 |
+|--------|------|--------|
+| 99991663 | ユーザートークンが未設定 | OAuthを設定 |
+| 131005 document not in wiki | ドキュメントトークンを使用した | `wikcn` で始まるノードトークンを使用 |
 
-## 与文档工具配合
+## ドキュメントツールとの連携
 
 ```yaml
-# 1. 搜索知识库
-工具: mcp__lark-mcp__wiki_v1_node_search
+# 1. Wikiを検索
+ツール: mcp__lark-mcp__wiki_v1_node_search
 data:
-  query: "关键词"
+  query: "キーワード"
 
-# 2. 用 obj_token 读取文档内容
-工具: mcp__lark-mcp__docx_v1_document_rawContent
+# 2. obj_token でドキュメント内容を取得
+ツール: mcp__lark-mcp__docx_v1_document_rawContent
 path:
-  document_id: "obj_token值"
+  document_id: "obj_tokenの値"
 useUAT: true
 ```

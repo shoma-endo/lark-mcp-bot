@@ -1,44 +1,44 @@
-# 消息格式示例
+# メッセージフォーマット例
 
-## 文本
+## テキスト
 ```json
-{"text": "消息内容"}
+{"text": "メッセージ内容"}
 ```
 
-## 富文本
+## リッチテキスト
 
-### 基础
+### 基本
 ```json
 {
   "post": {
     "zh_cn": {
-      "title": "标题",
+      "title": "タイトル",
       "content": [[{"tag": "text", "text": "内容"}]]
     }
   }
 }
 ```
 
-### 样式
+### スタイル
 ```json
 [
-  {"tag": "text", "text": "普通"},
-  {"tag": "text", "text": "加粗", "style": ["bold"]},
-  {"tag": "a", "text": "链接", "href": "https://example.com"},
+  {"tag": "text", "text": "通常"},
+  {"tag": "text", "text": "太字", "style": ["bold"]},
+  {"tag": "a", "text": "リンク", "href": "https://example.com"},
   {"tag": "at", "user_id": "ou_xxxxx"}
 ]
 ```
 
-## 元素
+## 要素
 
-| tag | 示例 |
-|-----|------|
+| tag | 例 |
+|-----|-----|
 | text | `{"tag": "text", "text": "内容"}` |
-| a | `{"tag": "a", "text": "链接", "href": "URL"}` |
+| a | `{"tag": "a", "text": "リンク", "href": "URL"}` |
 | at | `{"tag": "at", "user_id": "ou_xxx"}` |
 
-## 样式
+## スタイル
 
-- `bold` - 加粗
+- `bold` - 太字
 - `italic` - 斜体
-- `strikethrough` - 删除线
+- `strikethrough` - 打ち消し線
