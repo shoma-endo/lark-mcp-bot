@@ -1,5 +1,19 @@
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import type { FunctionDefinition } from '../types.js';
 import type { IntentPlan } from './intent-planner.js';
+
+/**
+ * Lark MCP skill guide loaded from .agents/skills/lark-mcp/SKILL.md.
+ * Injected into the system prompt to help the LLM use Lark MCP tools correctly.
+ */
+const LARK_MCP_SKILL_GUIDE = (() => {
+  try {
+    return readFileSync(resolve(process.cwd(), '.agents/skills/lark-mcp/SKILL.md'), 'utf-8');
+  } catch {
+    return '';
+  }
+})();
 
 // ---------------------------------------------------------------------------
 // System prompt
@@ -68,6 +82,8 @@ export function buildSystemPrompt(
       })}（Asia/Tokyo）\n`
     : '';
 
+  const skillGuide = LARK_MCP_SKILL_GUIDE ? `\n## Lark MCP 使用ガイド\n${LARK_MCP_SKILL_GUIDE}` : '';
+
   return `${BASE_SYSTEM_PROMPT}
 ${dateTimeHint}
 利用可能なツール:
@@ -76,7 +92,7 @@ ${plannerHints}
 
 ${TOOL_CALL_FORMAT_HINT}
 
-${RESPONSE_STYLE_HINT}${domainHints}`;
+${RESPONSE_STYLE_HINT}${domainHints}${skillGuide}`;
 }
 
 // ---------------------------------------------------------------------------
