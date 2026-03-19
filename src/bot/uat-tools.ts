@@ -20,10 +20,14 @@ export const UAT_REQUIRED_TOOLS = new Set([
   'task.v2.task.patch',
   'task.v2.task.addMembers',
   'task.v2.task.addReminders',
-  // MCP document tools (OAuth required for search)
+  // MCP document tools (OAuth required for search, read, and import)
   'docx.builtin.search',
+  'docx.v1.document.rawContent',
+  'docx.builtin.import',
   // MCP wiki tools (OAuth required for search)
   'wiki.v1.node.search',
+  // MCP drive tools (OAuth required for personal drive)
+  'drive.v1.permissionMember.create',
 ]);
 
 export function requiresUAT(toolName: string): boolean {
@@ -94,7 +98,7 @@ export async function buildOAuthUrl(openId: string): Promise<string> {
     client_id: config.larkAppId,
     response_type: 'code',
     redirect_uri: config.larkOAuthRedirectUri,
-    scope: 'calendar:calendar calendar:calendar:readonly calendar:calendar:update calendar:calendar:create calendar:calendar.event:read task:task:read task:task:write task:tasklist:read task:tasklist:write offline_access',
+    scope: 'drive:drive:readonly,drive:drive:write,wiki:wiki:readonly,calendar:calendar,calendar:calendar:readonly,calendar:calendar:update,calendar:calendar:create,calendar:calendar.event:read,task:task:read,task:task:write,task:tasklist:read,task:tasklist:write,offline_access',
     state: stateId,
   });
   return `https://open.larksuite.com/open-apis/authen/v1/authorize?${params.toString()}`;

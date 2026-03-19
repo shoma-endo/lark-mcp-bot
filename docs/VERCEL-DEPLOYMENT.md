@@ -121,7 +121,7 @@ DISABLED_TOOLS=
      ```
    - スコープ（カンマ区切り）:
      ```
-     drive:drive:readonly,wiki:wiki:readonly,calendar:calendar,calendar:calendar:readonly,calendar:calendar:update,calendar:calendar:create,calendar:calendar.event:read,task:task:read,task:task:write,task:tasklist:read,task:tasklist:write,offline_access
+     drive:drive:readonly,drive:drive:write,wiki:wiki:readonly,calendar:calendar,calendar:calendar:readonly,calendar:calendar:update,calendar:calendar:create,calendar:calendar.event:read,task:task:read,task:task:write,task:tasklist:read,task:tasklist:write,offline_access
      ```
    - 「保存」をクリック
 
