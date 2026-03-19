@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "lark-mcp": {
+      "source": "whatevertogo/feishuskill",
+      "sourceType": "github",
+      "computedHash": "c25722efd0e7700cde073456d5e118bd81db67112dfc808897dae19c5c0ac5b7"
+    }
+  }
+}
