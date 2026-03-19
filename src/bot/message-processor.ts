@@ -73,7 +73,7 @@ export class MessageProcessor {
       const systemPrompt = buildSystemPrompt(this.toolExecutor.convertMcpToolsToFunctions(), intentPlan, cleanText);
       const messagesForLlm = [
         { role: 'system', content: systemPrompt },
-        ...history.slice(-20),
+        ...this.safeHistorySlice(history, 20),
       ];
 
       const functions = this.toolExecutor.convertMcpToolsToFunctions();
@@ -227,7 +227,7 @@ export class MessageProcessor {
     for (let attempt = 1; attempt <= maxFollowUpAttempts; attempt++) {
       const followUpMessages = [
         { role: 'system', content: systemPrompt },
-        ...history.slice(-20),
+        ...this.safeHistorySlice(history, 20),
       ];
 
       const followUpCompletion = await this.llmService.createCompletion(
@@ -789,6 +789,25 @@ export class MessageProcessor {
       parsed[key] = value;
     }
     return Object.keys(parsed).length > 0 ? parsed : null;
+  }
+
+  /**
+   * Slice history to the last `limit` messages, then drop any leading `tool`
+   * messages that have no preceding assistant+tool_calls in the slice.
+   * Without this, a tool message at position 0 causes OpenAI-compatible APIs
+   * to reject the request because the required assistant message was cut off.
+   */
+  /**
+   * Slice history to the last `limit` messages, then drop any leading `tool`
+   * messages that have no preceding assistant+tool_calls in the slice.
+   * Without this, a tool message at position 0 causes OpenAI-compatible APIs
+   * to reject the request because the required assistant message was cut off.
+   */
+  private safeHistorySlice(history: ConversationMessage[], limit: number): ConversationMessage[] {
+    const sliced = history.slice(-limit);
+    const firstNonTool = sliced.findIndex(m => m.role !== 'tool');
+    if (firstNonTool === -1) return [];
+    return sliced.slice(firstNonTool);
   }
 
   private sanitizeLooseScalar(value: string): string {
