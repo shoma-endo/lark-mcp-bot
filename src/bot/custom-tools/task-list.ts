@@ -36,7 +36,7 @@ interface LarkTaskListResponse {
 
 function formatTimestamp(ts: string | undefined): string {
   if (!ts || ts === '0') return '未設定';
-  const d = new Date(Number(ts) * 1000);
+  const d = new Date(Number(ts));
   return d.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
 }
 
@@ -133,7 +133,7 @@ export const taskListTool: CustomTool = {
         tasks = tasks.filter((t) => {
           const ts = t.due?.timestamp;
           if (!ts || ts === '0') return false;
-          const dueDate = new Date(Number(ts) * 1000);
+          const dueDate = new Date(Number(ts));
           const dueDateStr = dueDate.toLocaleDateString('ja-JP', { timeZone: 'Asia/Tokyo' });
           return dueDateStr === targetDateStr;
         });
