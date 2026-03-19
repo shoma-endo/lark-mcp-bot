@@ -48,6 +48,7 @@ vercel env add GLM_API_KEY production
 vercel env add GLM_API_BASE_URL production
 vercel env add KV_REST_API_URL production
 vercel env add KV_REST_API_READ_ONLY_TOKEN production
+vercel env add LARK_OAUTH_REDIRECT_URI production
 
 # ログ設定（オプション）
 vercel env add LOG_LEVEL production
@@ -76,6 +77,7 @@ GLM_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.xxxxxxxxxxxxxxxx
 GLM_API_BASE_URL=https://api.z.ai/api/coding/paas/v4
 KV_REST_API_URL=https://xxxxxxxx.upstash.io
 KV_REST_API_READ_ONLY_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+LARK_OAUTH_REDIRECT_URI=https://your-project.vercel.app/auth/callback
 ```
 
 **オプション**:
@@ -111,7 +113,19 @@ DISABLED_TOOLS=
    - ドキュメント → 読み取り（必要に応じて）
    - カレンダー → 読み取り（必要に応じて）
 
-6. "発行"をクリックして変更を適用
+6. **OAuth設定**（ドキュメント検索・Wiki検索・カレンダー・タスクに必須）:
+   - アプリ設定 → 「OAuth」タブ → 「有効化」
+   - リダイレクトURI:
+     ```
+     https://your-project.vercel.app/auth/callback
+     ```
+   - スコープ（カンマ区切り）:
+     ```
+     drive:drive:readonly,wiki:wiki:readonly,calendar:calendar,calendar:calendar:readonly,calendar:calendar:update,calendar:calendar:create,calendar:calendar.event:read,task:task:read,task:task:write,task:tasklist:read,task:tasklist:write,offline_access
+     ```
+   - 「保存」をクリック
+
+7. "発行"をクリックして変更を適用
 
 ---
 

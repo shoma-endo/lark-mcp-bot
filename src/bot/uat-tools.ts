@@ -20,6 +20,10 @@ export const UAT_REQUIRED_TOOLS = new Set([
   'task.v2.task.patch',
   'task.v2.task.addMembers',
   'task.v2.task.addReminders',
+  // MCP document tools (OAuth required for search)
+  'docx.builtin.search',
+  // MCP wiki tools (OAuth required for search)
+  'wiki.v1.node.search',
 ]);
 
 export function requiresUAT(toolName: string): boolean {
