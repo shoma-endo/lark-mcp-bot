@@ -1,14 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { cacheTracker } from '../src/utils/cache-tracker.js';
 
-export const config = {
-  runtime: 'edge',
-};
-
-export default async function handler(req: NextRequest) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Only allow GET requests
   if (req.method !== 'GET') {
-    return NextResponse.json({ error: 'Method not allowed' }, { status: 405 });
+    res.status(405).json({ error: 'Method not allowed' });
+    return;
   }
 
   try {
@@ -45,15 +42,12 @@ ${stats.records.slice(-10).map(r => {
 *Statistics based on last ${stats.records.length} requests*
 `;
 
-    return NextResponse.json({
+    res.status(200).json({
       statistics: stats,
       markdown,
     });
   } catch (error) {
     console.error('Error fetching cache statistics:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch cache statistics' },
-      { status: 500 }
-    );
+    res.status(500).json({ error: 'Failed to fetch cache statistics' });
   }
 }
