@@ -130,12 +130,16 @@ export const calendarEventListTool: CustomTool = {
       }
 
       // Step 2: list events
-      // Convert ISO 8601 or any date string to Unix timestamp (seconds)
+      // Convert any date/timestamp representation to Unix timestamp (seconds string)
       const toUnixSec = (v: unknown): string | null => {
-        if (typeof v !== 'string' || !v.trim()) return null;
-        const s = v.trim();
-        // Already a Unix timestamp (all digits)
-        if (/^\d+$/.test(s)) return s;
+        if (v === null || v === undefined) return null;
+        const s = String(v).trim();
+        if (!s) return null;
+        // Pure digits: seconds (10 digits) or milliseconds (13 digits)
+        if (/^\d+$/.test(s)) {
+          const n = Number(s);
+          return s.length >= 13 ? String(Math.floor(n / 1000)) : s;
+        }
         // ISO 8601 or any parseable date string
         const ms = Date.parse(s);
         if (!isNaN(ms)) return String(Math.floor(ms / 1000));

@@ -380,8 +380,36 @@ export class ToolExecutor {
   private normalizeTaskParameters(parameters: Record<string, unknown>): Record<string, unknown> {
     const normalized: Record<string, unknown> = { ...parameters };
     const STRUCTURAL_KEYS = new Set(['data', 'params', 'path', 'useUAT']);
+    const TASK_PATH_PARAMS = ['task_guid', 'tasklist_guid', 'section_guid', 'comment_id', 'custom_field_guid'];
+    const TASK_QUERY_PARAMS = ['user_id_type'];
 
-    // If LLM sent flat params (no data wrapper), wrap body params in data
+    // --- Step 1: Extract path params into path sub-object ---
+    const existingPath = normalized.path && typeof normalized.path === 'object' && !Array.isArray(normalized.path)
+      ? { ...(normalized.path as Record<string, unknown>) }
+      : {};
+    for (const key of TASK_PATH_PARAMS) {
+      const val = normalized[key];
+      if (typeof val === 'string' && val.trim()) {
+        existingPath[key] = val.trim();
+        delete normalized[key];
+      }
+    }
+    if (Object.keys(existingPath).length > 0) normalized.path = existingPath;
+
+    // --- Step 2: Move query params to params sub-object ---
+    for (const key of TASK_QUERY_PARAMS) {
+      const val = normalized[key];
+      if (val !== undefined) {
+        const existingParams = normalized.params && typeof normalized.params === 'object'
+          ? { ...(normalized.params as Record<string, unknown>) }
+          : {};
+        existingParams[key] = val;
+        normalized.params = existingParams;
+        delete normalized[key];
+      }
+    }
+
+    // --- Step 3: If LLM sent flat params (no data wrapper), wrap body params in data ---
     const existingData = normalized.data && typeof normalized.data === 'object' && !Array.isArray(normalized.data)
       ? { ...(normalized.data as Record<string, unknown>) }
       : null;
@@ -392,26 +420,19 @@ export class ToolExecutor {
     } else {
       bodyData = {};
       for (const key of Object.keys(normalized)) {
-        if (!STRUCTURAL_KEYS.has(key) && key !== 'user_id_type') {
+        if (!STRUCTURAL_KEYS.has(key)) {
           bodyData[key] = normalized[key];
           delete normalized[key];
         }
       }
     }
 
-    // Move user_id_type to params (query param, not body)
-    const userIdType = normalized.user_id_type ?? bodyData.user_id_type;
-    if (userIdType) {
-      const existingParams = normalized.params && typeof normalized.params === 'object'
-        ? { ...(normalized.params as Record<string, unknown>) }
-        : {};
-      existingParams.user_id_type = userIdType;
-      normalized.params = existingParams;
-      delete normalized.user_id_type;
-      delete bodyData.user_id_type;
+    // Also remove query/path params that leaked into bodyData
+    for (const key of [...TASK_PATH_PARAMS, ...TASK_QUERY_PARAMS]) {
+      delete bodyData[key];
     }
 
-    // Coerce due.timestamp to milliseconds string
+    // --- Step 4: Coerce due.timestamp to milliseconds string ---
     const due = bodyData.due;
     if (due && typeof due === 'object' && !Array.isArray(due)) {
       const dueObj = { ...(due as Record<string, unknown>) };
