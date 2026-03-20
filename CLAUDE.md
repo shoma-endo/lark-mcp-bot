@@ -49,3 +49,6 @@ This project uses npm. Required env vars:
 - `KV_REST_API_URL`, `KV_REST_API_READ_ONLY_TOKEN` (optional - production only)
 
 See @README.md for full setup instructions.
+
+### Lark MCP Integration
+For detailed MCP tool usage, OAuth setup, and API patterns, see @.agents/skills/lark-mcp/SKILL.md

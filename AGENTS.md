@@ -40,6 +40,9 @@ npm test             # Run all tests
 - lowerCamelCase (vars/funcs), PascalCase (types/classes)
 - Domain-focused files (e.g., `src/storage/`)
 
+### Lark MCP Integration
+For MCP tool usage, OAuth configuration, and API patterns, see @.agents/skills/lark-mcp/SKILL.md
+
 ### Git
 - Conventional commits: `feat:`, `fix:`, `chore:`
 - PRs: description + linked issue + testing notes
