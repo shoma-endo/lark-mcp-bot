@@ -19,6 +19,10 @@ export interface ChatCompletionOptions {
   };
 }
 
+export interface PromptTokensDetails {
+  cached_tokens?: number;
+}
+
 export interface ChatCompletionResponse {
   id: string;
   created: number;
@@ -35,6 +39,7 @@ export interface ChatCompletionResponse {
     prompt_tokens: number;
     completion_tokens: number;
     total_tokens: number;
+    prompt_tokens_details?: PromptTokensDetails;
   };
 }
 

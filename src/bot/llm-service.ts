@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
+import { cacheTracker } from '../utils/cache-tracker.js';
 import { ERROR_REPLY_SYSTEM_PROMPT } from './prompts.js';
 import {
   ConversationMessage,
@@ -34,13 +35,18 @@ export class LLMService {
   ): Promise<OpenAI.Chat.ChatCompletion> {
     for (let attempt = 0; attempt <= _maxRetries; attempt++) {
       try {
-        return await this.openai.chat.completions.create({
+        const completion = await this.openai.chat.completions.create({
           model: config.glmModel,
           messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
           tools: tools as OpenAI.Chat.ChatCompletionTool[],
           temperature: 0.7,
           max_tokens: config.glmMaxTokens,
         });
+        
+        // Log usage information including cache statistics
+        this.logUsage(completion, attempt);
+        
+        return completion;
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
         const mappedError = this.mapApiErrorToBotError(error, err);
@@ -69,6 +75,56 @@ export class LLMService {
     }
     // Should never reach here
     throw new LLMError('Unexpected retry loop exit');
+  }
+
+  /**
+   * Log token usage information including cache statistics
+   */
+  private logUsage(completion: OpenAI.Chat.ChatCompletion, attempt: number): void {
+    const usage = completion.usage;
+    if (!usage) return;
+
+    const promptTokens = usage.prompt_tokens || 0;
+    const completionTokens = usage.completion_tokens || 0;
+    const totalTokens = usage.total_tokens || 0;
+    
+    // Extract cached tokens from prompt_tokens_details if available
+    const promptTokensDetails = (usage as any).prompt_tokens_details;
+    const cachedTokens = promptTokensDetails?.cached_tokens || 0;
+    
+    // Calculate cache efficiency
+    const cacheEfficiency = promptTokens > 0 ? (cachedTokens / promptTokens * 100) : 0;
+    
+    // Calculate potential cost savings (assuming 50% discount for cached tokens)
+    const standardCost = (promptTokens + completionTokens) * 0.01 / 1000;
+    const cachedCost = cachedTokens * 0.005 / 1000;
+    const actualCost = ((promptTokens - cachedTokens) * 0.01 + cachedCost + completionTokens * 0.01) / 1000;
+    const costSaving = standardCost - actualCost;
+
+    logger.info('LLM token usage', undefined, {
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: totalTokens,
+      cached_tokens: cachedTokens,
+      cache_efficiency_percent: parseFloat(cacheEfficiency.toFixed(2)),
+      cache_hit: cachedTokens > 0,
+      estimated_cost_standard: parseFloat(standardCost.toFixed(6)),
+      estimated_cost_actual: parseFloat(actualCost.toFixed(6)),
+      cost_saving: parseFloat(costSaving.toFixed(6)),
+      attempt,
+    });
+
+    // Record in cache tracker for statistics
+    cacheTracker.record({
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: totalTokens,
+      cached_tokens: cachedTokens,
+      cache_efficiency_percent: parseFloat(cacheEfficiency.toFixed(2)),
+      estimated_cost_standard: parseFloat(standardCost.toFixed(6)),
+      estimated_cost_actual: parseFloat(actualCost.toFixed(6)),
+      cost_saving: parseFloat(costSaving.toFixed(6)),
+    });
   }
 
   /**
