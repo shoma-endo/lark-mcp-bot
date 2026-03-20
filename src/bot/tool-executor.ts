@@ -248,6 +248,9 @@ export class ToolExecutor {
     if (toolName.startsWith('bitable.')) {
       return this.normalizeBitableParameters(linkNormalized);
     }
+    if (toolName.startsWith('task.')) {
+      return this.normalizeTaskParameters(linkNormalized);
+    }
     if (toolName !== 'calendar.v4.freebusy.list') return linkNormalized;
 
     const maybeData = linkNormalized.data;
@@ -372,6 +375,70 @@ export class ToolExecutor {
     const generic = text.match(/\/(docx|docs|sheets|wiki)\/([a-zA-Z0-9]+)/);
     if (generic?.[2]) return generic[2];
     return null;
+  }
+
+  private normalizeTaskParameters(parameters: Record<string, unknown>): Record<string, unknown> {
+    const normalized: Record<string, unknown> = { ...parameters };
+    const STRUCTURAL_KEYS = new Set(['data', 'params', 'path', 'useUAT']);
+
+    // If LLM sent flat params (no data wrapper), wrap body params in data
+    const existingData = normalized.data && typeof normalized.data === 'object' && !Array.isArray(normalized.data)
+      ? { ...(normalized.data as Record<string, unknown>) }
+      : null;
+
+    let bodyData: Record<string, unknown>;
+    if (existingData) {
+      bodyData = existingData;
+    } else {
+      bodyData = {};
+      for (const key of Object.keys(normalized)) {
+        if (!STRUCTURAL_KEYS.has(key) && key !== 'user_id_type') {
+          bodyData[key] = normalized[key];
+          delete normalized[key];
+        }
+      }
+    }
+
+    // Move user_id_type to params (query param, not body)
+    const userIdType = normalized.user_id_type ?? bodyData.user_id_type;
+    if (userIdType) {
+      const existingParams = normalized.params && typeof normalized.params === 'object'
+        ? { ...(normalized.params as Record<string, unknown>) }
+        : {};
+      existingParams.user_id_type = userIdType;
+      normalized.params = existingParams;
+      delete normalized.user_id_type;
+      delete bodyData.user_id_type;
+    }
+
+    // Coerce due.timestamp to milliseconds string
+    const due = bodyData.due;
+    if (due && typeof due === 'object' && !Array.isArray(due)) {
+      const dueObj = { ...(due as Record<string, unknown>) };
+      const ts = dueObj.timestamp;
+      if (ts !== undefined && ts !== null) {
+        dueObj.timestamp = this.coerceToMillisecondsString(ts);
+      }
+      bodyData.due = dueObj;
+    }
+
+    if (Object.keys(bodyData).length > 0) normalized.data = bodyData;
+    return normalized;
+  }
+
+  /** Convert a timestamp value to a millisecond epoch string for Lark task API. */
+  private coerceToMillisecondsString(value: unknown): string {
+    if (typeof value === 'number') {
+      return value < 10_000_000_000 ? String(value * 1000) : String(value);
+    }
+    if (typeof value === 'string') {
+      if (/^\d{13,}$/.test(value)) return value; // already ms
+      if (/^\d{10}$/.test(value)) return String(Number(value) * 1000); // seconds
+      // date string like "2026-03-26" or "2026/3/26"
+      const date = new Date(value.replace(/\//g, '-'));
+      if (!isNaN(date.getTime())) return String(date.getTime());
+    }
+    return String(value);
   }
 
   private normalizeBitableParameters(parameters: Record<string, unknown>): Record<string, unknown> {
