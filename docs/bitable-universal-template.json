@@ -1,0 +1,446 @@
+{
+  "metadata": {
+    "title": "Bitable Base 作成汎用テンプレート",
+    "description": "汎用的なBitable Base作成用テンプレート。テーブル構成、フィールド定義、レコード投入をカスタマイズ可能。",
+    "version": "2.0.0",
+    "created_at": "2026-03-21",
+    "template_type": "universal",
+    "usage": {
+      "overview": "このJSONはLark MCPのBitableツールを使用して、Bitable Baseを作成・構成するためのテンプレートです。",
+      "customization": [
+        "Base名、テーブル名、フィールド名を用途に合わせて変更してください",
+        "fieldsセクションのtypeとpropertyを必要なフィールドタイプに調整してください",
+        "recordsセクションのサンプルデータを実際のデータに置き換えてください",
+        "不要なステップやテーブルを削除して構成を簡素化できます"
+      ],
+      "mcp_tool_reference": {
+        "base_creation": "mcp__lark-mcp__bitable_v1_app_create",
+        "table_creation": "mcp__lark-mcp__bitable_v1_appTable_create",
+        "field_creation": "mcp__lark-mcp__bitable_v1_appTableField_create",
+        "record_creation": "mcp__lark-mcp__bitable_v1_appTableRecord_create"
+      }
+    },
+    "api_sequence": [
+      "1. bitable.v1.app.create → Baseアプリ作成 → レスポンスの app_token を {{APP_TOKEN}} に保存",
+      "2. bitable.v1.appTable.create × N → テーブル作成 → 各 table_id を保存",
+      "3. bitable.v1.appTableField.create × N → 各テーブルにフィールド作成",
+      "4. bitable.v1.appTableRecord.create × N → 各テーブルにレコード投入"
+    ],
+    "placeholders": {
+      "APP_TOKEN": "bitable.v1.app.create レスポンスの app.app_token",
+      "TABLE_ID_1": "最初のテーブルの table_id",
+      "TABLE_ID_2": "2番目のテーブルの table_id",
+      "TABLE_ID_3": "3番目のテーブルの table_id（必要に応じて追加/削除）"
+    },
+    "field_types": {
+      "1": "text (テキスト)",
+      "2": "number (数値)",
+      "3": "single_select (単一選択)",
+      "4": "multi_select (複数選択)",
+      "5": "date (日付)",
+      "11": "person (担当者)",
+      "13": "attachment (添付ファイル)",
+      "15": "url (リンク)",
+      "17": "email (メールアドレス)",
+      "18": "phone (電話番号)",
+      "19": "datetime (日時)",
+      "20": "progress (進捗率)",
+      "21": "currency (通貨)",
+      "22": "checkbox (チェックボックス)",
+      "23": "formula (数式)",
+      "24": "relation (関連)",
+      "25": "lookup (参照)",
+      "26": "member (メンバー)",
+      "27": "group (グループ)",
+      "1001": "created_time (作成日時)",
+      "1002": "modified_time (更新日時)",
+      "1003": "created_user (作成者)",
+      "1004": "modified_user (更新者)"
+    },
+    "color_codes": {
+      "0": "デフォルト",
+      "1": "シアン",
+      "2": "グリーン",
+      "3": "ライム",
+      "4": "イエロー",
+      "5": "オレンジ",
+      "6": "レッド",
+      "7": "マゼンタ",
+      "8": "バイオレット",
+      "9": "ブルー",
+      "10": "ターコイズ"
+    },
+    "date_format": "日付フィールドには Unix タイムスタンプ（ミリ秒）を使用します。例: 2025-01-01 00:00:00 JST = 1735689600000 / 変換ツール: https://www.unixtimestamp.com/"
+  },
+  "step_1_create_base": {
+    "_tool": "bitable.v1.app.create",
+    "_description": "新しいBitable Baseを作成します。nameフィールドを用途に合わせて変更してください。",
+    "data": {
+      "name": "{{BASE_NAME}}",
+      "folder": "{{FOLDER_NAME}}"
+    }
+  },
+  "step_2_create_tables": [
+    {
+      "_tool": "bitable.v1.appTable.create",
+      "_note": "レスポンスの table_id を TABLE_ID_1 として保存",
+      "_description": "最初のテーブルを作成します。table.nameを用途に合わせて変更してください。",
+      "path": {
+        "app_token": "{{APP_TOKEN}}"
+      },
+      "data": {
+        "table": {
+          "name": "{{TABLE_NAME_1}}",
+          "default_view_name": "{{DEFAULT_VIEW_NAME_1}}"
+        }
+      }
+    },
+    {
+      "_tool": "bitable.v1.appTable.create",
+      "_note": "レスポンスの table_id を TABLE_ID_2 として保存",
+      "_description": "2番目のテーブルを作成します。必要に応じて追加・削除してください。",
+      "path": {
+        "app_token": "{{APP_TOKEN}}"
+      },
+      "data": {
+        "table": {
+          "name": "{{TABLE_NAME_2}}",
+          "default_view_name": "{{DEFAULT_VIEW_NAME_2}}"
+        }
+      }
+    },
+    {
+      "_tool": "bitable.v1.appTable.create",
+      "_note": "レスポンスの table_id を TABLE_ID_3 として保存",
+      "_description": "3番目のテーブルを作成します。必要に応じて追加・削除してください。",
+      "path": {
+        "app_token": "{{APP_TOKEN}}"
+      },
+      "data": {
+        "table": {
+          "name": "{{TABLE_NAME_3}}",
+          "default_view_name": "{{DEFAULT_VIEW_NAME_3}}"
+        }
+      }
+    }
+  ],
+  "step_3_create_fields": {
+    "{{TABLE_NAME_1}}": {
+      "_tool": "bitable.v1.appTableField.create",
+      "_path": {
+        "app_token": "{{APP_TOKEN}}",
+        "table_id": "{{TABLE_ID_1}}"
+      },
+      "_description": "{{TABLE_NAME_1}}のフィールドを定義します。各フィールドのtypeとpropertyを用途に合わせて調整してください。",
+      "fields": [
+        {
+          "field_name": "{{FIELD_NAME_1}}",
+          "type": 1,
+          "description": "{{FIELD_DESCRIPTION_1}}"
+        },
+        {
+          "field_name": "{{FIELD_NAME_2}}",
+          "type": 2,
+          "description": "{{FIELD_DESCRIPTION_2}}"
+        },
+        {
+          "field_name": "{{SELECT_FIELD_NAME}}",
+          "type": 3,
+          "description": "単一選択フィールドのサンプル",
+          "property": {
+            "options": [
+              {
+                "name": "{{OPTION_1}}",
+                "color": 1
+              },
+              {
+                "name": "{{OPTION_2}}",
+                "color": 2
+              },
+              {
+                "name": "{{OPTION_3}}",
+                "color": 9
+              }
+            ]
+          }
+        },
+        {
+          "field_name": "{{MULTI_SELECT_FIELD_NAME}}",
+          "type": 4,
+          "description": "複数選択フィールドのサンプル",
+          "property": {
+            "options": [
+              {
+                "name": "{{OPTION_A}}"
+              },
+              {
+                "name": "{{OPTION_B}}"
+              },
+              {
+                "name": "{{OPTION_C}}"
+              }
+            ]
+          }
+        },
+        {
+          "field_name": "{{DATE_FIELD_NAME}}",
+          "type": 5,
+          "description": "日付フィールドのサンプル"
+        },
+        {
+          "field_name": "{{PERSON_FIELD_NAME}}",
+          "type": 11,
+          "description": "担当者フィールドのサンプル"
+        },
+        {
+          "field_name": "{{PROGRESS_FIELD_NAME}}",
+          "type": 20,
+          "description": "進捗率フィールドのサンプル"
+        }
+      ]
+    },
+    "{{TABLE_NAME_2}}": {
+      "_tool": "bitable.v1.appTableField.create",
+      "_path": {
+        "app_token": "{{APP_TOKEN}}",
+        "table_id": "{{TABLE_ID_2}}"
+      },
+      "_description": "{{TABLE_NAME_2}}のフィールドを定義します。",
+      "fields": [
+        {
+          "field_name": "{{FIELD_NAME_A}}",
+          "type": 1
+        },
+        {
+          "field_name": "{{FIELD_NAME_B}}",
+          "type": 2
+        },
+        {
+          "field_name": "{{RELATION_FIELD_NAME}}",
+          "type": 24,
+          "description": "関連フィールドのサンプル（{{TABLE_NAME_1}}への関連）",
+          "property": {
+            "foreign_table_id": "{{TABLE_ID_1}}",
+            "lookup_field_id": "{{FIELD_ID_TO_RELATED}}"
+          }
+        }
+      ]
+    },
+    "{{TABLE_NAME_3}}": {
+      "_tool": "bitable.v1.appTableField.create",
+      "_path": {
+        "app_token": "{{APP_TOKEN}}",
+        "table_id": "{{TABLE_ID_3}}"
+      },
+      "_description": "{{TABLE_NAME_3}}のフィールドを定義します。",
+      "fields": [
+        {
+          "field_name": "{{FIELD_NAME_X}}",
+          "type": 1
+        },
+        {
+          "field_name": "{{FIELD_NAME_Y}}",
+          "type": 3,
+          "property": {
+            "options": [
+              {
+                "name": "{{OPTION_P}}",
+                "color": 6
+              },
+              {
+                "name": "{{OPTION_Q}}",
+                "color": 7
+              }
+            ]
+          }
+        },
+        {
+          "field_name": "{{EMAIL_FIELD_NAME}}",
+          "type": 17,
+          "description": "メールアドレスフィールドのサンプル"
+        },
+        {
+          "field_name": "{{URL_FIELD_NAME}}",
+          "type": 15,
+          "description": "リンクフィールドのサンプル"
+        }
+      ]
+    }
+  },
+  "step_4_create_records": {
+    "{{TABLE_NAME_1}}": {
+      "_tool": "bitable.v1.appTableRecord.create",
+      "_path": {
+        "app_token": "{{APP_TOKEN}}",
+        "table_id": "{{TABLE_ID_1}}"
+      },
+      "_description": "{{TABLE_NAME_1}}にサンプルレコードを投入します。実際のデータに置き換えてください。",
+      "records": [
+        {
+          "fields": {
+            "{{FIELD_NAME_1}}": "{{SAMPLE_VALUE_1}}",
+            "{{FIELD_NAME_2}}": 100,
+            "{{SELECT_FIELD_NAME}}": "{{OPTION_1}}",
+            "{{MULTI_SELECT_FIELD_NAME}}": [
+              "{{OPTION_A}}",
+              "{{OPTION_C}}"
+            ],
+            "{{DATE_FIELD_NAME}}": 1735689600000,
+            "{{PROGRESS_FIELD_NAME}}": 75
+          }
+        },
+        {
+          "fields": {
+            "{{FIELD_NAME_1}}": "{{SAMPLE_VALUE_2}}",
+            "{{FIELD_NAME_2}}": 250,
+            "{{SELECT_FIELD_NAME}}": "{{OPTION_2}}",
+            "{{MULTI_SELECT_FIELD_NAME}}": [
+              "{{OPTION_B}}"
+            ],
+            "{{DATE_FIELD_NAME}}": 1738368000000,
+            "{{PROGRESS_FIELD_NAME}}": 30
+          }
+        },
+        {
+          "fields": {
+            "{{FIELD_NAME_1}}": "{{SAMPLE_VALUE_3}}",
+            "{{FIELD_NAME_2}}": 500,
+            "{{SELECT_FIELD_NAME}}": "{{OPTION_3}}",
+            "{{MULTI_SELECT_FIELD_NAME}}": [
+              "{{OPTION_A}}",
+              "{{OPTION_B}}",
+              "{{OPTION_C}}"
+            ],
+            "{{DATE_FIELD_NAME}}": 1741046400000,
+            "{{PROGRESS_FIELD_NAME}}": 100
+          }
+        }
+      ]
+    },
+    "{{TABLE_NAME_2}}": {
+      "_tool": "bitable.v1.appTableRecord.create",
+      "_path": {
+        "app_token": "{{APP_TOKEN}}",
+        "table_id": "{{TABLE_ID_2}}"
+      },
+      "_description": "{{TABLE_NAME_2}}にサンプルレコードを投入します。",
+      "records": [
+        {
+          "fields": {
+            "{{FIELD_NAME_A}}": "{{RELATED_VALUE_1}}",
+            "{{FIELD_NAME_B}}": 50
+          }
+        },
+        {
+          "fields": {
+            "{{FIELD_NAME_A}}": "{{RELATED_VALUE_2}}",
+            "{{FIELD_NAME_B}}": 120
+          }
+        }
+      ]
+    },
+    "{{TABLE_NAME_3}}": {
+      "_tool": "bitable.v1.appTableRecord.create",
+      "_path": {
+        "app_token": "{{APP_TOKEN}}",
+        "table_id": "{{TABLE_ID_3}}"
+      },
+      "_description": "{{TABLE_NAME_3}}にサンプルレコードを投入します。",
+      "records": [
+        {
+          "fields": {
+            "{{FIELD_NAME_X}}": "{{SAMPLE_TEXT}}",
+            "{{FIELD_NAME_Y}}": "{{OPTION_P}}",
+            "{{EMAIL_FIELD_NAME}}": "example@example.com",
+            "{{URL_FIELD_NAME}}": "https://example.com"
+          }
+        }
+      ]
+    }
+  },
+  "customization_examples": {
+    "project_management": {
+      "base_name": "プロジェクト管理Base",
+      "tables": [
+        {
+          "name": "案件管理",
+          "fields": [
+            {"name": "案件名", "type": 1},
+            {"name": "ステータス", "type": 3, "options": ["提案中", "受注確定", "完了", "失注"]},
+            {"name": "見積金額", "type": 21},
+            {"name": "担当者", "type": 11},
+            {"name": "納期", "type": 5}
+          ]
+        },
+        {
+          "name": "タスク管理",
+          "fields": [
+            {"name": "タスク名", "type": 1},
+            {"name": "ステータス", "type": 3, "options": ["未着手", "進行中", "完了"]},
+            {"name": "担当者", "type": 11},
+            {"name": "期限", "type": 5},
+            {"name": "進捗率", "type": 20}
+          ]
+        }
+      ]
+    },
+    "customer_management": {
+      "base_name": "顧客管理Base",
+      "tables": [
+        {
+          "name": "顧客情報",
+          "fields": [
+            {"name": "会社名", "type": 1},
+            {"name": "業種", "type": 3, "options": ["IT", "製造", "金融", "小売"]},
+            {"name": "担当者", "type": 11},
+            {"name": "メールアドレス", "type": 17},
+            {"name": "電話番号", "type": 18},
+            {"name": "Webサイト", "type": 15}
+          ]
+        },
+        {
+          "name": "商談履歴",
+          "fields": [
+            {"name": "商談日", "type": 5},
+            {"name": "内容", "type": 1},
+            {"name": "次回アクション", "type": 1},
+            {"name": "ステータス", "type": 3, "options": ["提案中", "交渉中", "受注", "失注"]}
+          ]
+        }
+      ]
+    },
+    "task_tracker": {
+      "base_name": "タスク追跡Base",
+      "tables": [
+        {
+          "name": "タスク",
+          "fields": [
+            {"name": "タスク名", "type": 1},
+            {"name": "説明", "type": 1},
+            {"name": "担当者", "type": 11},
+            {"name": "優先度", "type": 3, "options": ["低", "中", "高", "緊急"], "colors": [0, 7, 8, 6]},
+            {"name": "ステータス", "type": 3, "options": ["未着手", "進行中", "レビュー中", "完了"]},
+            {"name": "期限", "type": 5},
+            {"name": "完了日", "type": 5},
+            {"name": "進捗率", "type": 20},
+            {"name": "見積工数", "type": 2},
+            {"name": "実績工数", "type": 2}
+          ]
+        }
+      ]
+    }
+  },
+  "quick_start_guide": {
+    "step_1": "すべての{{PLACEHOLDER}}を実際の値に置き換えてください",
+    "step_2": "step_1_create_baseでBaseを作成し、app_tokenを取得します",
+    "step_3": "step_2_create_tablesでテーブルを作成し、各table_idを取得します",
+    "step_4": "step_3_create_fieldsで各テーブルにフィールドを作成します",
+    "step_5": "step_4_create_recordsでサンプルレコードを投入します",
+    "tips": [
+      "不要なテーブルはstep_2_create_tablesから削除してください",
+      "フィールドの種類はmetadata.field_typesを参照してください",
+      "カラーコードはmetadata.color_codesを参照してください",
+      "日付はUnixタイムスタンプ（ミリ秒）で指定してください"
+    ]
+  }
+}
