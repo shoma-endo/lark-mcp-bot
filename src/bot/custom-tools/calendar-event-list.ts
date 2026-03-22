@@ -116,14 +116,14 @@ export const calendarEventListTool: CustomTool = {
         const listData = await listRes.json() as {
           code: number;
           msg?: string;
-          data?: { calendar_list?: Array<{ calendar_id?: string; type?: string }> };
+          data?: { calendar_list?: Array<{ calendar?: { calendar_id?: string; type?: string } }> };
         };
         if (listData.code !== 0) {
           return `Error: Lark API エラー [code: ${listData.code}] ${listData.msg ?? ''}`;
         }
         const calendars = listData.data?.calendar_list ?? [];
-        const primary = calendars.find((c) => c.type === 'primary') ?? calendars[0];
-        calendarId = primary?.calendar_id ?? null;
+        const primary = calendars.find((c) => c.calendar?.type === 'primary') ?? calendars[0];
+        calendarId = primary?.calendar?.calendar_id ?? null;
         if (!calendarId) {
           return 'Error: プライマリカレンダーIDが取得できませんでした。';
         }
