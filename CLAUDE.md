@@ -52,3 +52,12 @@ See @README.md for full setup instructions.
 
 ### Lark MCP Integration
 For detailed MCP tool usage, OAuth setup, and API patterns, see @.agents/skills/lark-mcp/SKILL.md
+
+### Development Philosophy
+**Security**: This is a personal-use project. General web app security concerns are not a priority. Focus on code simplicity and maintainability.
+
+**Implementation Priorities**:
+1. Reuse existing implementations and patterns
+2. Write concise, straightforward code
+3. Avoid over-engineering
+4. Prioritize readability and simplicity over comprehensive security measures
