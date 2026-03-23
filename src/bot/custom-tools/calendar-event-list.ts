@@ -113,7 +113,7 @@ export const calendarEventListTool: CustomTool = {
         }
       }
 
-      // Step 2: list events
+      // Step 2: list events with pagination
       // Convert any date/timestamp representation to Unix timestamp (seconds string)
       const toUnixSec = (v: unknown): string | null => {
         if (v === null || v === undefined) return null;
@@ -130,41 +130,64 @@ export const calendarEventListTool: CustomTool = {
         return null;
       };
 
-      const query = new URLSearchParams();
       const now = Math.floor(Date.now() / 1000);
       const startTs = toUnixSec(params.start_time) ?? String(now);
       const endTs = toUnixSec(params.end_time) ?? String(now + 7 * 24 * 60 * 60);
-      query.set('start_time', startTs);
-      query.set('end_time', endTs);
       const pageSize = typeof params.page_size === 'number' ? params.page_size : 50;
-      query.set('page_size', String(Math.min(Math.max(pageSize, 1), 500)));
 
-      const url = `${config.larkDomain}/open-apis/calendar/v4/calendars/${encodeURIComponent(calendarId)}/events?${query.toString()}`;
-      logger.debug(`calendarEvent.list → GET ${url}`);
+      let allEvents: LarkEvent[] = [];
+      let pageToken: string | undefined;
+      let pageCount = 0;
+      const maxPages = 20; // Prevent infinite loops (20 pages * 500 = 10,000 events max)
 
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${userAccessToken}` },
-      });
-      if (!res.ok) {
-        const errBody = await res.text().catch(() => '');
-        logger.warn(`calendarEvent.list HTTP ${res.status}: ${errBody}`);
-        return `Error: 予定一覧取得に失敗しました (HTTP ${res.status}): ${errBody}`;
+      while (pageCount < maxPages) {
+        const query = new URLSearchParams();
+        query.set('start_time', startTs);
+        query.set('end_time', endTs);
+        query.set('page_size', String(Math.min(Math.max(pageSize, 1), 500)));
+        if (pageToken) {
+          query.set('page_token', pageToken);
+        }
+
+        const url = `${config.larkDomain}/open-apis/calendar/v4/calendars/${encodeURIComponent(calendarId)}/events?${query.toString()}`;
+        logger.debug(`calendarEvent.list → GET ${url} (page ${pageCount + 1})`);
+
+        const res = await fetch(url, {
+          headers: { Authorization: `Bearer ${userAccessToken}` },
+        });
+        if (!res.ok) {
+          const errBody = await res.text().catch(() => '');
+          logger.warn(`calendarEvent.list HTTP ${res.status}: ${errBody}`);
+          return `Error: 予定一覧取得に失敗しました (HTTP ${res.status}): ${errBody}`;
+        }
+
+        const data = await res.json() as LarkEventListResponse;
+        if (data.code !== 0) {
+          return `Error: Lark API エラー [code: ${data.code}] ${data.msg ?? ''}`;
+        }
+
+        const pageEvents = data.data?.items ?? [];
+        allEvents.push(...pageEvents);
+
+        // Check if there are more pages
+        pageToken = data.data?.page_token;
+        if (!pageToken || !data.data?.has_more) {
+          break;
+        }
+        pageCount++;
       }
 
-      const data = await res.json() as LarkEventListResponse;
-      if (data.code !== 0) {
-        return `Error: Lark API エラー [code: ${data.code}] ${data.msg ?? ''}`;
-      }
-
-      const events = data.data?.items ?? [];
-      if (events.length === 0) {
+      if (allEvents.length === 0) {
         return '指定期間に予定はありません。';
       }
 
+      const truncated = pageCount >= maxPages && pageToken;
+      const summaryText = `カレンダー予定一覧（${allEvents.length}件${truncated ? '（最大10,000件まで表示、それ以上は省略されています）' : ''}）:`;
+      
       const lines: string[] = [
-        `カレンダー予定一覧（${events.length}件${data.data?.has_more ? '、続きあり' : ''}）:`,
+        summaryText,
         '',
-        ...events.map((ev, i) => formatEvent(ev, i + 1)),
+        ...allEvents.map((ev, i) => formatEvent(ev, i + 1)),
       ];
       return lines.join('\n');
     } catch (err) {
