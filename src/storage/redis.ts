@@ -30,8 +30,8 @@ export class RedisStorage implements ConversationStorage {
     };
 
     this.redis = new upstash.Redis({
-      url: redisUrl,
-      token: redisToken,
+      url: redisUrl.trim(),
+      token: redisToken.trim(),
     });
 
     logger.info('Redis storage initialized', undefined, {

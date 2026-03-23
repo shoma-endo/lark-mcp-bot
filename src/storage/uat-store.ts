@@ -18,7 +18,10 @@ export class UATStore {
   constructor(redisUrl?: string, redisToken?: string) {
     if (redisUrl && redisToken) {
       try {
-        this.redis = new Redis({ url: redisUrl, token: redisToken });
+        // Trim whitespace/newlines from Redis token
+        const trimmedUrl = redisUrl.trim();
+        const trimmedToken = redisToken.trim();
+        this.redis = new Redis({ url: trimmedUrl, token: trimmedToken });
         logger.info('UATStore: Redis connected');
       } catch (err) {
         logger.warn('UATStore: Redis init failed, using in-memory fallback', undefined, err as Error);

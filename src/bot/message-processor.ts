@@ -156,7 +156,9 @@ export class MessageProcessor {
         // --- UAT: resolve user access token for personal tools ---
         let userAccessToken: string | undefined;
         if (requiresUAT(functionName) && senderOpenId) {
+          logger.debug(`UAT取得を試行: openId=${senderOpenId}, tool=${functionName}`);
           const token = await getValidAccessToken(senderOpenId);
+          logger.debug(`UAT取得結果: ${token ? '成功' : '失敗（未認証または期限切れ）'}, tool=${functionName}`);
           if (!token) {
             // No valid token → ask user to authorize
             const authUrl = await buildOAuthUrl(senderOpenId);
