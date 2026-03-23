@@ -11,28 +11,7 @@
 import { config } from '../../config.js';
 import { logger } from '../../utils/logger.js';
 import type { CustomTool } from './index.js';
-
-interface LarkEvent {
-  event_id?: string;
-  summary?: string;
-  description?: string;
-  start_time?: { timestamp?: string; date?: string };
-  end_time?: { timestamp?: string; date?: string };
-  location?: { name?: string };
-  status?: string;
-  is_all_day?: boolean;
-  organizer_calendar_id?: string;
-}
-
-interface LarkEventListResponse {
-  code: number;
-  msg?: string;
-  data?: {
-    items?: LarkEvent[];
-    has_more?: boolean;
-    page_token?: string;
-  };
-}
+import type { LarkEvent, LarkEventListResponse } from '../../types/calendar.js';
 
 function formatTime(t: { timestamp?: string; date?: string } | undefined): string {
   if (!t) return '不明';

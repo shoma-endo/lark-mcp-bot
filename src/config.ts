@@ -35,8 +35,9 @@ function getEnvVar(key: string, defaultValue?: string): string {
   return value || '';
 }
 
-// Constants (base URL and model can be overridden by env vars)
+// Constants
 const LARK_DOMAIN = 'https://open.larksuite.com';
+const NOTIFY_CHAT_ID = 'oc_c97681330c347f4576e14ab442093684';
 const GLM_API_BASE_URL = getEnvVar('GLM_API_BASE_URL', 'https://api.z.ai/api/coding/paas/v4');
 const GLM_MODEL = getEnvVar('GLM_MODEL', 'glm-4.7');
 const GLM_MAX_TOKENS = 4096;
@@ -65,4 +66,4 @@ export const config: Config = {
 };
 
 // Export constants for reference
-export { LARK_DOMAIN, GLM_API_BASE_URL, GLM_MODEL };
+export { LARK_DOMAIN, GLM_API_BASE_URL, GLM_MODEL, NOTIFY_CHAT_ID };

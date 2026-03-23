@@ -7,7 +7,14 @@
     { "source": "/auth/callback",  "destination": "/api/oauth-callback" }
   ],
   "functions": {
-    "api/webhook.ts":        { "maxDuration": 300 },
-    "api/oauth-callback.ts": { "maxDuration": 10  }
-  }
+    "api/webhook.ts":           { "maxDuration": 300 },
+    "api/oauth-callback.ts":    { "maxDuration": 10  },
+    "api/monthly-calendar.ts":  { "maxDuration": 60  }
+  },
+  "crons": [
+    {
+      "path": "/api/monthly-calendar",
+      "schedule": "0 0 1 * *"
+    }
+  ]
 }
