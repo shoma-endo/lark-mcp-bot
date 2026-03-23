@@ -469,60 +469,88 @@ export class MessageProcessor {
       return this.applyUserIdTypeForContact(enriched, requesterIdentity);
     }
 
-    if (toolName !== 'calendar.v4.freebusy.list') return enriched;
-
-    const requester = this.resolveRequesterId(requesterIdentity);
-    if (!requester) return enriched;
-
-    const params = (enriched.params && typeof enriched.params === 'object' && !Array.isArray(enriched.params))
-      ? { ...(enriched.params as Record<string, unknown>) }
-      : {};
-    const data = (enriched.data && typeof enriched.data === 'object' && !Array.isArray(enriched.data))
-      ? { ...(enriched.data as Record<string, unknown>) }
-      : {};
+    // Apply time range hints to calendar tools
+    const isCalendarTimeRangeTool = toolName === 'calendar.v4.freebusy.list' || toolName === 'calendar.v4.calendarEvent.list';
+    if (!isCalendarTimeRangeTool) return enriched;
 
     const hintedTimeMin = intentPlan.slotHints.timeMin;
     const hintedTimeMax = intentPlan.slotHints.timeMax;
-    if (!enriched.time_min && !data.time_min && hintedTimeMin) {
-      enriched.time_min = hintedTimeMin;
-    }
-    if (!enriched.time_max && !data.time_max && hintedTimeMax) {
-      enriched.time_max = hintedTimeMax;
-    }
+    
+    // For calendar.v4.freebusy.list: use time_min/time_max and resolve requester identity
+    if (toolName === 'calendar.v4.freebusy.list') {
+      const requester = this.resolveRequesterId(requesterIdentity);
+      if (requester) {
+        const params = (enriched.params && typeof enriched.params === 'object' && !Array.isArray(enriched.params))
+          ? { ...(enriched.params as Record<string, unknown>) }
+          : {};
+        const data = (enriched.data && typeof enriched.data === 'object' && !Array.isArray(enriched.data))
+          ? { ...(enriched.data as Record<string, unknown>) }
+          : {};
 
-    const flatUserIds = Array.isArray(enriched.user_ids)
-      ? (enriched.user_ids as unknown[]).map(v => String(v))
-      : [];
-    if (flatUserIds.length > 0) {
-      const replaced = flatUserIds.map(v => v === 'me' ? requester.id : v);
-      enriched.user_ids = replaced;
-      if (!enriched.user_id && !data.user_id && !enriched.room_id && !data.room_id) {
-        enriched.user_id = replaced[0];
+        if (!enriched.time_min && !data.time_min && hintedTimeMin) {
+          enriched.time_min = hintedTimeMin;
+        }
+        if (!enriched.time_max && !data.time_max && hintedTimeMax) {
+          enriched.time_max = hintedTimeMax;
+        }
+
+        const flatUserIds = Array.isArray(enriched.user_ids)
+          ? (enriched.user_ids as unknown[]).map(v => String(v))
+          : [];
+        if (flatUserIds.length > 0) {
+          const replaced = flatUserIds.map(v => v === 'me' ? requester.id : v);
+          enriched.user_ids = replaced;
+          if (!enriched.user_id && !data.user_id && !enriched.room_id && !data.room_id) {
+            enriched.user_id = replaced[0];
+          }
+        }
+
+        if (enriched.user_id === 'me') {
+          enriched.user_id = requester.id;
+        }
+        if (data.user_id === 'me') {
+          data.user_id = requester.id;
+        }
+
+        const hasAnyTarget = !!(enriched.user_id || enriched.room_id || data.user_id || data.room_id);
+        if (!hasAnyTarget) {
+          enriched.user_id = requester.id;
+        }
+
+        if (
+          !enriched.user_id_type &&
+          !params.user_id_type &&
+          (!enriched.room_id && !data.room_id)
+        ) {
+          enriched.user_id_type = requester.type;
+        }
+
+        if (Object.keys(data).length > 0) enriched.data = data;
+        if (Object.keys(params).length > 0) enriched.params = params;
+      }
+      return enriched;
+    }
+    
+    // For calendar.v4.calendarEvent.list: convert to Unix timestamp seconds and use start_time/end_time
+    if (toolName === 'calendar.v4.calendarEvent.list') {
+      const toUnixSec = (isoStr?: string): string | undefined => {
+        if (!isoStr) return undefined;
+        const ms = Date.parse(isoStr);
+        if (isNaN(ms)) return undefined;
+        return String(Math.floor(ms / 1000));
+      };
+      
+      const data = enriched.data as Record<string, unknown> | undefined;
+      if (!enriched['start_time'] && !(data?.['start_time']) && hintedTimeMin) {
+        const startTs = toUnixSec(hintedTimeMin);
+        if (startTs) enriched['start_time'] = startTs;
+      }
+      if (!enriched['end_time'] && !(data?.['end_time']) && hintedTimeMax) {
+        const endTs = toUnixSec(hintedTimeMax);
+        if (endTs) enriched['end_time'] = endTs;
       }
     }
 
-    if (enriched.user_id === 'me') {
-      enriched.user_id = requester.id;
-    }
-    if (data.user_id === 'me') {
-      data.user_id = requester.id;
-    }
-
-    const hasAnyTarget = !!(enriched.user_id || enriched.room_id || data.user_id || data.room_id);
-    if (!hasAnyTarget) {
-      enriched.user_id = requester.id;
-    }
-
-    if (
-      !enriched.user_id_type &&
-      !params.user_id_type &&
-      (!enriched.room_id && !data.room_id)
-    ) {
-      enriched.user_id_type = requester.type;
-    }
-
-    if (Object.keys(data).length > 0) enriched.data = data;
-    if (Object.keys(params).length > 0) enriched.params = params;
     return enriched;
   }
 

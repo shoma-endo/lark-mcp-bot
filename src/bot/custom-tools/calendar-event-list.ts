@@ -90,7 +90,8 @@ export const calendarEventListTool: CustomTool = {
           }
         );
         if (!listRes.ok) {
-          logger.error(`カレンダー一覧API HTTPエラー: ${listRes.status}`, await listRes.text().catch(() => ''));
+          const errText = await listRes.text().catch(() => '');
+          logger.error(`カレンダー一覧API HTTPエラー: ${listRes.status}`, undefined, undefined, { httpStatus: listRes.status, errorBody: errText });
           return `Error: カレンダー一覧取得に失敗しました (HTTP ${listRes.status})`;
         }
         const listData = await listRes.json() as {
