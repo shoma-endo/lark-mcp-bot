@@ -97,7 +97,7 @@ export const calendarEventListTool: CustomTool = {
         const listData = await listRes.json() as {
           code: number;
           msg?: string;
-          data?: { calendar_list?: Array<{ calendar?: { calendar_id?: string; type?: string } }> };
+          data?: { calendar_list?: Array<{ calendar_id?: string; type?: string }> };
         };
         logger.debug(`カレンダー一覧レスポンス: code=${listData.code}, calendars=${listData.data?.calendar_list?.length ?? 0}`);
         if (listData.code !== 0) {
@@ -106,8 +106,8 @@ export const calendarEventListTool: CustomTool = {
         }
         const calendars = listData.data?.calendar_list ?? [];
         logger.debug(`取得したカレンダーリスト: ${JSON.stringify(calendars)}`);
-        const primary = calendars.find((c) => c.calendar?.type === 'primary') ?? calendars[0];
-        calendarId = primary?.calendar?.calendar_id ?? null;
+        const primary = calendars.find((c) => c.type === 'primary') ?? calendars[0];
+        calendarId = primary?.calendar_id ?? null;
         if (!calendarId) {
           logger.error(`プライマリカレンダーIDが見つかりません。calendar_list=${JSON.stringify(calendars)}`);
           return 'Error: プライマリカレンダーIDが取得できませんでした。';
