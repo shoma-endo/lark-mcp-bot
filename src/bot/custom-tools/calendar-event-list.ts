@@ -83,6 +83,7 @@ export const calendarEventListTool: CustomTool = {
         : null;
 
       if (!calendarId) {
+        logger.info('calendar_id が指定されていないため、カレンダーリストからプライマリカレンダーを検索します');
         const listRes = await fetch(
           `${config.larkDomain}/open-apis/calendar/v4/calendars`,
           {
@@ -97,16 +98,17 @@ export const calendarEventListTool: CustomTool = {
         const listData = await listRes.json() as {
           code: number;
           msg?: string;
-          data?: { calendar_list?: Array<{ calendar_id?: string; type?: string }> };
+          data?: { calendar_list?: Array<{ calendar_id?: string; type?: string; summary?: string }> };
         };
-        logger.debug(`カレンダー一覧レスポンス: code=${listData.code}, calendars=${listData.data?.calendar_list?.length ?? 0}`);
+        logger.info(`カレンダー一覧レスポンス: code=${listData.code}, calendars=${listData.data?.calendar_list?.length ?? 0}`);
         if (listData.code !== 0) {
           logger.error(`Lark API エラー: code=${listData.code}, msg=${listData.msg}`);
           return `Error: Lark API エラー [code: ${listData.code}] ${listData.msg ?? ''}`;
         }
         const calendars = listData.data?.calendar_list ?? [];
-        logger.debug(`取得したカレンダーリスト: ${JSON.stringify(calendars)}`);
+        logger.debug(`取得したカレンダーリスト: ${JSON.stringify(calendars.map(c => ({ calendar_id: c.calendar_id, type: c.type, summary: c.summary })))}`);
         const primary = calendars.find((c) => c.type === 'primary') ?? calendars[0];
+        logger.info(`選択されたカレンダー: ${JSON.stringify({ calendar_id: primary?.calendar_id, type: primary?.type, summary: primary?.summary })}`);
         calendarId = primary?.calendar_id ?? null;
         if (!calendarId) {
           logger.error(`プライマリカレンダーIDが見つかりません。calendar_list=${JSON.stringify(calendars)}`);
@@ -135,6 +137,8 @@ export const calendarEventListTool: CustomTool = {
       const startTs = toUnixSec(params.start_time) ?? String(now);
       const endTs = toUnixSec(params.end_time) ?? String(now + 7 * 24 * 60 * 60);
       const pageSize = typeof params.page_size === 'number' ? params.page_size : 50;
+      
+      logger.info(`カレンダー予定取得パラメータ: calendar_id=${calendarId}, start_time=${startTs}, end_time=${endTs}, page_size=${pageSize}`);
 
       let allEvents: LarkEvent[] = [];
       let pageToken: string | undefined;
