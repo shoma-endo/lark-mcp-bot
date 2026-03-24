@@ -13,21 +13,38 @@ import { logger } from '../../utils/logger.js';
 import type { CustomTool } from './index.js';
 import type { LarkEvent, LarkEventListResponse } from '../../types/calendar.js';
 
-function formatTime(t: { timestamp?: string; date?: string } | undefined): string {
+function formatTime(t: { timestamp?: string; date?: string } | undefined, isEnd = false): string {
   if (!t) return '不明';
-  if (t.date) return t.date; // all-day event
+  if (t.date) {
+    // all-day event (YYYY-MM-DD format)
+    const [year, month, day] = t.date.split('-').map(Number);
+    const d = new Date(year, month - 1, day);
+    // For all-day events, the end date is exclusive (next day), so subtract 1 day if it's an end time
+    if (isEnd) {
+      d.setDate(d.getDate() - 1);
+    }
+    return `${d.getMonth() + 1}/${d.getDate()} (${['日', '月', '火', '水', '木', '金', '土'][d.getDay()]})`;
+  }
   if (t.timestamp) {
+    // Lark API returns Unix timestamps in seconds
     const d = new Date(Number(t.timestamp) * 1000);
-    return d.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+    return d.toLocaleString('ja-JP', { 
+      timeZone: 'Asia/Tokyo',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   }
   return '不明';
 }
 
 function formatEvent(ev: LarkEvent, index: number): string {
+  const isAllDay = !!ev.start_time?.date && !!ev.end_time?.date;
   const lines: string[] = [
     `${index}. ${ev.summary ?? '（タイトルなし）'}`,
-    `   開始: ${formatTime(ev.start_time)}`,
-    `   終了: ${formatTime(ev.end_time)}`,
+    `   期間: ${formatTime(ev.start_time)} 〜 ${formatTime(ev.end_time, isAllDay)}`,
   ];
   if (ev.location?.name) lines.push(`   場所: ${ev.location.name}`);
   if (ev.description) lines.push(`   説明: ${ev.description.slice(0, 100)}${ev.description.length > 100 ? '…' : ''}`);
@@ -39,7 +56,10 @@ export const calendarEventListTool: CustomTool = {
   name: 'calendar.v4.calendarEvent.list',
   description:
     'ユーザーのカレンダーから予定の一覧（タイトル・日時・場所・説明など詳細）を取得します。' +
-    'start_time と end_time で絞り込めます（Unix タイムスタンプ文字列）。' +
+    'start_time と end_time で絞り込めます（Unix タイムスタンプ、秒単位）。' +
+    '重要: 日付範囲の計算には、現在時刻を基準にして正確なUnixタイムスタンプを計算してください。' +
+    '例: 「今日」なら現在日付の00:00:00から翌日の00:00:00まで、' +
+    '「明日」なら明日の00:00:00から翌々日の00:00:00までです。' +
     'ユーザー認証（UAT）が必要です。',
   parameters: {
     type: 'object',
@@ -52,12 +72,12 @@ export const calendarEventListTool: CustomTool = {
       start_time: {
         type: 'string',
         description:
-          '取得開始時刻（Unix タイムスタンプ、秒単位の文字列）。例: "1700000000"',
+          '取得開始時刻（Unix タイムスタンプ、秒単位の文字列）。例: "1700000000"。現在時刻（秒）は Math.floor(Date.now() / 1000) で取得できます。',
       },
       end_time: {
         type: 'string',
         description:
-          '取得終了時刻（Unix タイムスタンプ、秒単位の文字列）。例: "1700086400"',
+          '取得終了時刻（Unix タイムスタンプ、秒単位の文字列）。例: "1700086400"。',
       },
       page_size: {
         type: 'number',
@@ -133,9 +153,15 @@ export const calendarEventListTool: CustomTool = {
         return null;
       };
 
-      const now = Math.floor(Date.now() / 1000);
-      const startTs = toUnixSec(params.start_time) ?? String(now);
-      const endTs = toUnixSec(params.end_time) ?? String(now + 7 * 24 * 60 * 60);
+      // Default to today's date range (00:00:00 to 23:59:59 in JST)
+      const today = new Date();
+      const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+      const defaultStartTs = String(Math.floor(startOfDay.getTime() / 1000));
+      const defaultEndTs = String(Math.floor(endOfDay.getTime() / 1000));
+      
+      const startTs = toUnixSec(params.start_time) ?? defaultStartTs;
+      const endTs = toUnixSec(params.end_time) ?? defaultEndTs;
       const pageSize = typeof params.page_size === 'number' ? params.page_size : 50;
       
       logger.info(`カレンダー予定取得パラメータ: calendar_id=${calendarId}, start_time=${startTs}, end_time=${endTs}, page_size=${pageSize}`);
