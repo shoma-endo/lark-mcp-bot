@@ -13,6 +13,7 @@ export interface LarkEvent {
   status?: string;
   is_all_day?: boolean;
   organizer_calendar_id?: string;
+  _calendarName?: string; // Internal field for calendar name
 }
 
 export interface LarkEventListResponse {

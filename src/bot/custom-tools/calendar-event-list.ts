@@ -44,8 +44,13 @@ function formatEvent(ev: LarkEvent, index: number): string {
   const isAllDay = !!ev.start_time?.date && !!ev.end_time?.date;
   const lines: string[] = [
     `${index}. ${ev.summary ?? '（タイトルなし）'}`,
-    `   期間: ${formatTime(ev.start_time)} 〜 ${formatTime(ev.end_time, isAllDay)}`,
   ];
+  if (ev._calendarName) {
+    lines.push(`   カレンダー: ${ev._calendarName}`);
+  }
+  lines.push(
+    `   期間: ${formatTime(ev.start_time)} 〜 ${formatTime(ev.end_time, isAllDay)}`
+  );
   if (ev.location?.name) lines.push(`   場所: ${ev.location.name}`);
   if (ev.description) lines.push(`   説明: ${ev.description.slice(0, 100)}${ev.description.length > 100 ? '…' : ''}`);
   if (ev.event_id) lines.push(`   ID: ${ev.event_id}`);
@@ -97,13 +102,15 @@ export const calendarEventListTool: CustomTool = {
     }
 
     try {
-      // Step 1: resolve calendar_id (fetch calendar list and find primary if not provided)
-      let calendarId = typeof params.calendar_id === 'string' && params.calendar_id.trim()
-        ? params.calendar_id.trim()
-        : null;
-
-      if (!calendarId) {
-        logger.info('calendar_id が指定されていないため、カレンダーリストからプライマリカレンダーを検索します');
+      // Step 1: resolve calendar_id (fetch calendar list if not provided)
+      let calendarIds: string[] = [];
+      let calendarNames: Map<string, string> = new Map();
+      
+      if (typeof params.calendar_id === 'string' && params.calendar_id.trim()) {
+        calendarIds = [params.calendar_id.trim()];
+        calendarNames.set(calendarIds[0], '指定されたカレンダー');
+      } else {
+        logger.info('calendar_id が指定されていないため、全カレンダーの予定を取得します');
         const listRes = await fetch(
           `${config.larkDomain}/open-apis/calendar/v4/calendars`,
           {
@@ -127,13 +134,23 @@ export const calendarEventListTool: CustomTool = {
         }
         const calendars = listData.data?.calendar_list ?? [];
         logger.debug(`取得したカレンダーリスト: ${JSON.stringify(calendars.map(c => ({ calendar_id: c.calendar_id, type: c.type, summary: c.summary })))}`);
-        const primary = calendars.find((c) => c.type === 'primary') ?? calendars[0];
-        logger.info(`選択されたカレンダー: ${JSON.stringify({ calendar_id: primary?.calendar_id, type: primary?.type, summary: primary?.summary })}`);
-        calendarId = primary?.calendar_id ?? null;
-        if (!calendarId) {
-          logger.error(`プライマリカレンダーIDが見つかりません。calendar_list=${JSON.stringify(calendars)}`);
-          return 'Error: プライマリカレンダーIDが取得できませんでした。';
-        }
+        
+        // Get all calendar IDs
+        calendarIds = calendars.map(c => c.calendar_id).filter((id): id is string => id !== undefined);
+        
+        // Build calendar name map
+        calendars.forEach(c => {
+          if (c.calendar_id && c.summary) {
+            calendarNames.set(c.calendar_id, c.summary);
+          }
+        });
+        
+        logger.info(`${calendarIds.length}個のカレンダーから予定を取得します`);
+      }
+      
+      if (calendarIds.length === 0) {
+        logger.error('カレンダーIDが見つかりません。');
+        return 'Error: カレンダーIDが取得できませんでした。';
       }
 
       // Step 2: list events with pagination
@@ -164,61 +181,85 @@ export const calendarEventListTool: CustomTool = {
       const endTs = toUnixSec(params.end_time) ?? defaultEndTs;
       const pageSize = typeof params.page_size === 'number' ? params.page_size : 50;
       
-      logger.info(`カレンダー予定取得パラメータ: calendar_id=${calendarId}, start_time=${startTs}, end_time=${endTs}, page_size=${pageSize}`);
+      logger.info(`カレンダー予定取得パラメータ: calendar_ids=${calendarIds.join(',')}, start_time=${startTs}, end_time=${endTs}, page_size=${pageSize}`);
 
       let allEvents: LarkEvent[] = [];
-      let pageToken: string | undefined;
-      let pageCount = 0;
       const maxPages = 20; // Prevent infinite loops (20 pages * 500 = 10,000 events max)
 
-      while (pageCount < maxPages) {
-        const query = new URLSearchParams();
-        query.set('start_time', startTs);
-        query.set('end_time', endTs);
-        query.set('page_size', String(Math.min(Math.max(pageSize, 1), 500)));
-        if (pageToken) {
-          query.set('page_token', pageToken);
+      // Fetch events from all calendars
+      for (const calendarId of calendarIds) {
+        const calendarName = calendarNames.get(calendarId) ?? calendarId;
+        let pageToken: string | undefined;
+        let pageCount = 0;
+
+        while (pageCount < maxPages) {
+          const query = new URLSearchParams();
+          query.set('start_time', startTs);
+          query.set('end_time', endTs);
+          query.set('page_size', String(Math.min(Math.max(pageSize, 1), 500)));
+          if (pageToken) {
+            query.set('page_token', pageToken);
+          }
+
+          const url = `${config.larkDomain}/open-apis/calendar/v4/calendars/${encodeURIComponent(calendarId)}/events?${query.toString()}`;
+          logger.debug(`calendarEvent.list → GET ${url} (calendar: ${calendarName}, page ${pageCount + 1})`);
+
+          const res = await fetch(url, {
+            headers: { Authorization: `Bearer ${userAccessToken}` },
+          });
+          if (!res.ok) {
+            const errBody = await res.text().catch(() => '');
+            logger.warn(`calendarEvent.list HTTP ${res.status}: ${errBody}`);
+            // Continue to next calendar instead of failing completely
+            break;
+          }
+
+          const data = await res.json() as LarkEventListResponse;
+          if (data.code !== 0) {
+            logger.warn(`Lark API エラー [code: ${data.code}]: ${data.msg ?? ''}`);
+            break;
+          }
+
+          const pageEvents = data.data?.items ?? [];
+          // Add calendar name to each event for identification
+          const eventsWithCalendar = pageEvents.map(ev => ({
+            ...ev,
+            _calendarName: calendarName,
+          }));
+          allEvents.push(...eventsWithCalendar);
+          logger.debug(`カレンダー「${calendarName}」から${pageEvents.length}件の予定を取得しました`);
+
+          // Check if there are more pages
+          pageToken = data.data?.page_token;
+          if (!pageToken || !data.data?.has_more) {
+            break;
+          }
+          pageCount++;
         }
-
-        const url = `${config.larkDomain}/open-apis/calendar/v4/calendars/${encodeURIComponent(calendarId)}/events?${query.toString()}`;
-        logger.debug(`calendarEvent.list → GET ${url} (page ${pageCount + 1})`);
-
-        const res = await fetch(url, {
-          headers: { Authorization: `Bearer ${userAccessToken}` },
-        });
-        if (!res.ok) {
-          const errBody = await res.text().catch(() => '');
-          logger.warn(`calendarEvent.list HTTP ${res.status}: ${errBody}`);
-          return `Error: 予定一覧取得に失敗しました (HTTP ${res.status}): ${errBody}`;
-        }
-
-        const data = await res.json() as LarkEventListResponse;
-        if (data.code !== 0) {
-          return `Error: Lark API エラー [code: ${data.code}] ${data.msg ?? ''}`;
-        }
-
-        const pageEvents = data.data?.items ?? [];
-        allEvents.push(...pageEvents);
-
-        // Check if there are more pages
-        pageToken = data.data?.page_token;
-        if (!pageToken || !data.data?.has_more) {
-          break;
-        }
-        pageCount++;
       }
 
-      if (allEvents.length === 0) {
+      // Remove duplicates (same event_id)
+      const uniqueEvents = Array.from(
+        new Map(allEvents.map(ev => [ev.event_id, ev])).values()
+      );
+
+      // Sort by start time
+      uniqueEvents.sort((a, b) => {
+        const aTime = a.start_time?.timestamp ?? a.start_time?.date ?? '';
+        const bTime = b.start_time?.timestamp ?? b.start_time?.date ?? '';
+        return aTime.localeCompare(bTime);
+      });
+
+      if (uniqueEvents.length === 0) {
         return '指定期間に予定はありません。';
       }
 
-      const truncated = pageCount >= maxPages && pageToken;
-      const summaryText = `カレンダー予定一覧（${allEvents.length}件${truncated ? '（最大10,000件まで表示、それ以上は省略されています）' : ''}）:`;
+      const summaryText = `カレンダー予定一覧（${uniqueEvents.length}件${allEvents.length > uniqueEvents.length ? `（重複${allEvents.length - uniqueEvents.length}件を除く）` : ''}）:`;
       
       const lines: string[] = [
         summaryText,
         '',
-        ...allEvents.map((ev, i) => formatEvent(ev, i + 1)),
+        ...uniqueEvents.map((ev, i) => formatEvent(ev, i + 1)),
       ];
       return lines.join('\n');
     } catch (err) {
