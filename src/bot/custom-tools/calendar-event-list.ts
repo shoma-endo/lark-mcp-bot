@@ -58,9 +58,10 @@ function formatEvent(ev: LarkEvent, index: number): string {
 }
 
 export const calendarEventListTool: CustomTool = {
-  name: 'calendar.v4.calendarEvent.list',
+  name: 'custom.calendar.v4.calendarEvent.list',
   description:
-    'ユーザーのカレンダーから予定の一覧（タイトル・日時・場所・説明など詳細）を取得します。' +
+    '【推奨】ユーザーの全カレンダーから予定の一覧（タイトル・日時・場所・説明など詳細）を取得します。' +
+    '単一のカレンダーではなく、ユーザーの全カレンダー（プライマリ、共有、他のカレンダーすべて）から予定を取得して統合します。' +
     'start_time と end_time で絞り込めます（Unix タイムスタンプ、秒単位）。' +
     '重要: 日付範囲の計算には、現在時刻を基準にして正確なUnixタイムスタンプを計算してください。' +
     '例: 「今日」なら現在日付の00:00:00から翌日の00:00:00まで、' +
@@ -72,7 +73,7 @@ export const calendarEventListTool: CustomTool = {
       calendar_id: {
         type: 'string',
         description:
-          'カレンダーID。省略すると自動的にプライマリカレンダーを使用。',
+          'カレンダーID。省略すると自動的に全カレンダーから予定を取得。',
       },
       start_time: {
         type: 'string',

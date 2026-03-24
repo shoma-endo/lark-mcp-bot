@@ -64,17 +64,19 @@ task.v2.task.create を使う際の重要ルール:
 - membersでアサインする場合: type="user", role="assignee"`;
 
 /**
- * Calendar-specific guidance injected only when the user message is calendar-related.
+ * Calendar-specific guidance injected only when user message is calendar-related.
  */
 export const CALENDAR_HINTS = `
-calendar.v4.calendarEvent.list を使う際の重要ルール:
+カレンダー予定の取得には、**custom.calendar.v4.calendarEvent.list** を使用してください。
+- このツールはユーザーの**全カレンダー**（プライマリ、共有、他のカレンダーすべて）から予定を取得して統合します
 - start_time と end_time は Unixタイムスタンプ（秒単位、10桁の数字）を指定します
 - 「今日の予定」を取得する場合:
   - start_time: 今日の00:00:00（JST）のUnixタイムスタンプ
   - end_time: 翌日の00:00:00（JST）のUnixタイムスタンプ
   - 計算例: const today = new Date(); const startTs = Math.floor(new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime() / 1000); const endTs = startTs + 86400;
 - 注意: Unixタイムスタンプは**秒単位**です（ミリ秒ではありません。10桁の数字を使用してください）
-- calendar_id を省略すると、自動的にプライマリカレンダーが使用されます`;
+- calendar_id を省略すると、自動的に全カレンダーが使用されます
+- **重要**: Lark MCP Serverの calendar.v4.calendarEvent.list（MCPツール）ではなく、必ず custom.calendar.v4.calendarEvent.list（カスタムツール）を使用してください。カスタムツールの方が全カレンダーを検索します。`;
 
 /** Base instructions always included in the system prompt. */
 export const BASE_SYSTEM_PROMPT = `あなたはLarkのAIアシスタントボットです。

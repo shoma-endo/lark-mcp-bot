@@ -12,7 +12,7 @@ export const UAT_REQUIRED_TOOLS = new Set([
   'calendar.v4.freebusy.list',
   'calendar.v4.calendar.primary',
   // Custom calendar tools
-  'calendar.v4.calendarEvent.list',
+  'custom.calendar.v4.calendarEvent.list',
   // Custom task tools
   'task.v2.task.list',
   // MCP task tools
